@@ -1,7 +1,5 @@
 # AligNano: Terminal FASTA & A3M Alignment Editor
 
-*Version 1.0.10*
-
 A lightweight, dependency-free Python terminal interface for browsing and editing multiple sequence alignments (MSA) in FASTA and A3M formats. It provides a real-time color-coded alignment grid, designed for efficient sequence inspection directly from the command line.
 
 ## Features
