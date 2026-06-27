@@ -4,7 +4,7 @@ A retro-styled, dependency-free Python terminal utility for browsing and editing
 
 ## Features
 
-- 🎮 **BBS-Inspired Interface**: Colorful 80s ANSI double-line frames, custom logos, and clear status overlays.
+- 🎮 **BBS-Inspired Interface**: Colorful 80s ANSI ASCII frames, custom logos, and clear status overlays.
 - 🧬 **Aliview-Style Color Coding**:
   - **Nucleotides**: A (Red), T/U (Green), C (Blue), G (Yellow), Gaps (Dark Grey).
   - **Amino Acids**: ClustalX-inspired colors based on chemical properties (Acidic: Red, Basic: Blue, Polar: Green, Hydrophobic: Orange/Yellow, Cysteine: Pink, Glycine: Grey).
@@ -49,7 +49,7 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 | `Ctrl+O` | `Insert` | Toggle edit mode between **INSERT (INS)** and **OVERWRITE (OVR)** |
 | `Alphanumeric` | | Insert or overwrite nucleotides or amino acids at cursor (in sequence pane) |
 | `Space` or `-` | | Insert alignment gap (`-`) at cursor |
-| `Ctrl+K` | `Delete` / `D` (Accession Pane only) | Delete sequence character at the current cursor position |
+| `Ctrl+K` | `Delete` / `D` (Accession Pane only) | Delete sequence character to the left of the cursor (shortens sequence) |
 | `Ctrl+E` | `E` (Accession Pane only) | Edit selected accession name |
 | `Ctrl+A` | `A` (Accession Pane only) | Add a new empty sequence row |
 | `Ctrl+X` | `X` (Accession Pane only) | Delete current sequence row (requires confirmation) |
