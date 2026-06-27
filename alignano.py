@@ -35,6 +35,7 @@ def get_theme_colors():
         return {
             'accent': '\x1b[38;5;198m',
             'gold': '\x1b[38;5;220m',
+            'blue': '\x1b[38;5;20m',       # Dark blue
             'dim': '\x1b[38;5;244m',
             'bold': '\x1b[1m',
             'reset': '\x1b[0m',
@@ -44,6 +45,7 @@ def get_theme_colors():
         return {
             'accent': '\x1b[35m',      # Magenta
             'gold': '\x1b[33m',        # Yellow
+            'blue': '\x1b[34m',        # Blue
             'dim': '\x1b[2m',          # Dim / faint
             'bold': '\x1b[1m',
             'reset': '\x1b[0m',
@@ -1397,39 +1399,88 @@ def run_editor(filepath):
 # ==============================================================================
 # MAIN ENTRY & FILES SELECTOR
 # ==============================================================================
-def display_retro_intro(files, selected_idx):
-    """Draws retro ANSI BBS style menu."""
+def display_retro_intro(choices, selected_idx):
+    """Draws professional ANSI start screen menu."""
     cols, rows = shutil.get_terminal_size((80, 24))
     lines = []
     
-    # Retro Title Banner (Plain ASCII art using slash/backslash for absolute font safety)
+    # Modern Block-style ASCII art for "AligNano"
     banner = [
-        "    ___    _  _          _   _                        ",
-        "   /   |  | |(_)        | \\ | |                       ",
-        "  / /| |  | | _   __ _  |  \\| |  __ _  _ __    ___    ",
-        " / ___ |  | || | / _` | | . ` | / _` || '_ \\  / _ \\   ",
-        "/_/  |_|  |_||_|| (_| | |_|\\__|\\__,_||_| |_|\\___/    ",
-        "                 \\__, |                               ",
-        "                 |___/                                "
+        "     _   _ _       _   _                  ",
+        "    /_\\ | (_) __ _| \\ | | __ _ _ __   ___ ",
+        "   //_\\\\| | |/ _` |  \\| |/ _` | '_ \\ / _ \\",
+        "  /  _  \\ | | (_| | |\\  | (_| | | | | (_) |",
+        "  \\_/ \\_/_|_|\\__, |_| \\_|\\__,_|_| |_|\\___/ ",
+        "             |___/                         "
     ]
     
     colors = get_theme_colors()
     
     lines.append("\x1b[H\x1b[2J") # Clear and home
-    lines.append(colors['accent'] + "=" * cols + colors['reset'])
+    lines.append(colors['blue'] + "=" * cols + colors['reset'])
     
     # Render banner centered
     for bline in banner:
         pad = max(0, (cols - len(bline)) // 2)
         lines.append(colors['gold'] + " " * pad + bline + colors['reset'])
         
-    lines.append(colors['accent'] + "=" * cols + colors['reset'])
+    lines.append(colors['blue'] + "=" * cols + colors['reset'])
     lines.append(colors['bold'] + "  Multiple Sequence Alignment Editor & Browser" + colors['reset'])
     lines.append("  Interactive Terminal Grid Viewer & Editor\n")
     
-    lines.append("  " + colors['bold'] + "Select a FASTA file from the current workspace or create a new alignment:" + colors['reset'] + "\n")
+    lines.append("  " + colors['bold'] + "Menu Options:" + colors['reset'] + "\n")
     
-    # Render file selector list
+    # Render options list
+    for idx, choice in enumerate(choices):
+        if idx == selected_idx:
+            # Highlight selected item
+            lines.append(f"   {colors['select_bg']} * {choice} {colors['reset']}")
+        else:
+            lines.append(f"     - {choice}")
+            
+    lines.append("")
+    lines.append(colors['dim'] + "  [Arrows] Move selection   [Enter] Confirm Selection   [Q] Quit" + colors['reset'])
+    lines.append(colors['blue'] + "=" * cols + colors['reset'])
+    
+    sys.stdout.write("\n".join(lines))
+    sys.stdout.flush()
+
+def display_file_selector(files, selected_idx):
+    """Draws file selection screen."""
+    cols, rows = shutil.get_terminal_size((80, 24))
+    lines = []
+    
+    # Modern Block-style ASCII art for "AligNano"
+    banner = [
+        "     _   _ _       _   _                  ",
+        "    /_\\ | (_) __ _| \\ | | __ _ _ __   ___ ",
+        "   //_\\\\| | |/ _` |  \\| |/ _` | '_ \\ / _ \\",
+        "  /  _  \\ | | (_| | |\\  | (_| | | | | (_) |",
+        "  \\_/ \\_/_|_|\\__, |_| \\_|\\__,_|_| |_|\\___/ ",
+        "             |___/                         "
+    ]
+    
+    colors = get_theme_colors()
+    
+    lines.append("\x1b[H\x1b[2J") # Clear and home
+    lines.append(colors['blue'] + "=" * cols + colors['reset'])
+    
+    # Render banner centered
+    for bline in banner:
+        pad = max(0, (cols - len(bline)) // 2)
+        lines.append(colors['gold'] + " " * pad + bline + colors['reset'])
+        
+    lines.append(colors['blue'] + "=" * cols + colors['reset'])
+    lines.append(colors['bold'] + "  Multiple Sequence Alignment Editor & Browser" + colors['reset'])
+    lines.append("  Interactive Terminal Grid Viewer & Editor\n")
+    
+    lines.append("  " + colors['bold'] + "Select Alignment File to Load:" + colors['reset'] + "\n")
+    
+    # Render files list
+    if len(files) == 1 and files[0] == "[ Go Back ]":
+        lines.append("     (No .fasta or .a3m files found in current directory)")
+        lines.append("")
+        
     for idx, f in enumerate(files):
         if idx == selected_idx:
             # Highlight selected item
@@ -1438,11 +1489,45 @@ def display_retro_intro(files, selected_idx):
             lines.append(f"     - {f}")
             
     lines.append("")
-    lines.append(colors['dim'] + "  [Arrows] Move selection   [Enter] Open Selection   [Q] Quit" + colors['reset'])
-    lines.append(colors['accent'] + "=" * cols + colors['reset'])
+    lines.append(colors['dim'] + "  [Arrows] Move selection   [Enter] Load File   [Esc/Q] Cancel" + colors['reset'])
+    lines.append(colors['blue'] + "=" * cols + colors['reset'])
     
     sys.stdout.write("\n".join(lines))
     sys.stdout.flush()
+
+def run_file_selector():
+    """Interactive menu to select a FASTA/A3M file from the current directory."""
+    # List files case-insensitively matching standard extensions
+    valid_exts = ('.fasta', '.fa', '.msa', '.seq', '.a3m')
+    files = []
+    for f in sorted(os.listdir('.')):
+        if os.path.isfile(f) and f.lower().endswith(valid_exts):
+            files.append(f)
+            
+    files.append("[ Go Back ]")
+    selected_idx = 0
+    
+    while True:
+        display_file_selector(files, selected_idx)
+        try:
+            key = read_key()
+        except TerminalResizeException:
+            sys.stdout.write("\x1b[2J")
+            sys.stdout.flush()
+            continue
+            
+        if key == 'KEY_UP':
+            selected_idx = max(0, selected_idx - 1)
+        elif key == 'KEY_DOWN':
+            selected_idx = min(len(files) - 1, selected_idx + 1)
+        elif key == 'ENTER':
+            choice = files[selected_idx]
+            if choice == "[ Go Back ]":
+                return None
+            else:
+                return choice
+        elif key in ('ESCAPE', 'Q', 'q'):
+            return None
 
 def main():
     if len(sys.argv) > 1:
@@ -1450,23 +1535,14 @@ def main():
         run_editor(filepath)
         return
         
-    # Interactive menu for workspace directories
-    # Only look inside workspace (current directory AligNano)
-    workspace_files = []
-    # Create lists of files matching standard extensions
-    valid_exts = ('.fasta', '.fa', '.msa', '.seq')
-    for f in sorted(os.listdir('.')):
-        if os.path.isfile(f) and f.lower().endswith(valid_exts):
-            # Exclude hard-coded example alignments from the interactive start screen
-            if f in ('dna_sample.fasta', 'protein_sample.fasta'):
-                continue
-            workspace_files.append(f)
-            
-    # Add options for new files and quitting
-    workspace_files.append("[Create New Empty Alignment]")
-    workspace_files.append("[Exit]")
+    choices = [
+        "Load Alignment (FASTA or A3M)",
+        "Create New Empty Alignment",
+        "Exit"
+    ]
     
     selected_idx = 0
+    valid_exts = ('.fasta', '.fa', '.msa', '.seq', '.a3m')
     
     # Hide cursor
     sys.stdout.write("\x1b[?25l")
@@ -1474,7 +1550,7 @@ def main():
     
     try:
         while True:
-            display_retro_intro(workspace_files, selected_idx)
+            display_retro_intro(choices, selected_idx)
             try:
                 key = read_key()
             except TerminalResizeException:
@@ -1485,14 +1561,14 @@ def main():
             if key == 'KEY_UP':
                 selected_idx = max(0, selected_idx - 1)
             elif key == 'KEY_DOWN':
-                selected_idx = min(len(workspace_files) - 1, selected_idx + 1)
+                selected_idx = min(len(choices) - 1, selected_idx + 1)
             elif key == 'ENTER':
-                choice = workspace_files[selected_idx]
-                if choice == "[Exit]":
+                choice = choices[selected_idx]
+                if choice == "Exit":
                     break
-                elif choice == "[Create New Empty Alignment]":
+                elif choice == "Create New Empty Alignment":
                     # Prompt for file name
-                    sys.stdout.write("\x1b[?25h\n Enter name for new FASTA file: ")
+                    sys.stdout.write("\x1b[?25h\n Enter name for new FASTA/A3M file: ")
                     sys.stdout.flush()
                     new_filename = sys.stdin.readline().strip()
                     sys.stdout.write("\x1b[?25l")
@@ -1506,7 +1582,7 @@ def main():
                     full_path = os.path.abspath(new_filename)
                     current_dir = os.path.abspath(os.getcwd())
                     if not full_path.startswith(current_dir):
-                        print("Access denied (sandbox policy: AligNano folder only).")
+                        print("\n Access denied (sandbox policy: AligNano folder only).")
                         time.sleep(2)
                         continue
                         
@@ -1514,9 +1590,11 @@ def main():
                     save_fasta(new_filename, ["Seq_1"], ["ACTG-ACTG-ACTG-ACTG"])
                     run_editor(new_filename)
                     break
-                else:
-                    run_editor(choice)
-                    break
+                elif choice == "Load Alignment (FASTA or A3M)":
+                    selected_file = run_file_selector()
+                    if selected_file:
+                        run_editor(selected_file)
+                        break
             elif key == 'Q' or key == 'ESCAPE':
                 break
     finally:
