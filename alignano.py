@@ -515,7 +515,7 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
         lines.append("|" + status_msg + " " * max(0, space_left) + "|")
     else:
         # Static instructions line
-        help_text = " [Arrows] Move  [Tab] Swap  [Del] Del  [[/]] Pane  [Ctrl+V] Col  [Ctrl+O] Mode"
+        help_text = " [Arrows] Move  [Tab] Swap  [Del] Del  [[/]] Pane  [Ctrl+V] Color [Ctrl+O] Mode"
         space_left = cols - 2 - len(help_text)
         lines.append("|" + help_text + " " * max(0, space_left) + "|")
         
@@ -717,7 +717,7 @@ def run_editor(filepath):
                                     cnt = counts.get(char, 0)
                                     freq = cnt / num_seqs if num_seqs > 0 else 0.0
                                     col_data_counts[char].append(cnt)
-                                    col_data_freq[char].append(round(freq, 4))
+                                    col_data_freq[char].append(round(freq, 3))
                                     
                                 if len(set(col_chars)) > 1:
                                     changed_col_indices.append(col_idx)

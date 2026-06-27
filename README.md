@@ -60,7 +60,7 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 | `Ctrl+V` | `V` (Accession Pane only) | Cycle color visualization modes (**DNA/RNA** ➔ **Protein** ➔ **DIFF (variable sites)** ➔ **Monochrome**) |
 | `Ctrl+F` | | Open search prompt (find accession name or sequence motif) |
 | `Ctrl+N` | | Jump to the next search match |
-| `Ctrl+G` | `G` (Accession Pane only) | Export reference-indexed character counts/frequencies and changed-only CSVs |
+| `Ctrl+G` | `G` (Accession Pane only) | Export transposed character counts/frequencies (all and polymorphic-only) CSVs |
 | `Ctrl+Z` | `U` (Accession Pane only) | Undo last action |
 | `Ctrl+Y` | `Y` (Accession Pane only) | Redo last action |
 | `Ctrl+S` | `S` (Accession Pane only) | Save current alignment to a FASTA file |
