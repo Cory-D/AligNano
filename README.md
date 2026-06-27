@@ -1,5 +1,7 @@
 # AligNano: Terminal FASTA Editor & Browser
 
+*Version 1.0.10*
+
 A retro-styled, dependency-free Python terminal utility for browsing and editing multiple sequence alignments (MSA) in FASTA format. Designed in the spirit of 1980s ANSI BBSs, tmux, and Antigravity CLI, it provides a color-coded alignment interface modeled after Aliview.
 
 ## Features
@@ -8,6 +10,7 @@ A retro-styled, dependency-free Python terminal utility for browsing and editing
 - 🧬 **Aliview-Style Color Coding**:
   - **Nucleotides**: A (Red), T/U (Green), C (Blue), G (Yellow), Gaps (Dark Grey).
   - **Amino Acids**: ClustalX-inspired colors based on chemical properties (Acidic: Red, Basic: Blue, Polar: Green, Hydrophobic: Orange/Yellow, Cysteine: Pink, Glycine: Grey).
+  - **DIFF Mode**: Selectively highlights only columns containing variable sites (mutations/gaps) to draw focus to polymorphs.
 - 🔀 **Synced Side-by-Side Panes**: Left-hand pane for accession names, right-hand pane for sequences. Scrolls in vertical synchronization.
 - ⌨️ **Intuitive Keyboard Controls**:
   - **Arrow keys**: Cell-by-cell navigation and intuitive focus swapping between panes.
@@ -44,6 +47,7 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 |---|---|---|
 | `Arrows` | | Move cursor in active pane (Up/Down scrolls both synchronously) |
 | `Tab` or `Ctrl+I` | | Switch focus between the Accession Names pane and the Sequence pane |
+| `[` / `]` | | Decrease / increase Accession Name panel width |
 | `Ctrl+Left` / `Ctrl+Right` / `Ctrl+L` / `Ctrl+R` | | Page sequences horizontally |
 | `Ctrl+Up` / `Ctrl+Down` / `Ctrl+U` / `Ctrl+D` | | Page sequences/accessions vertically |
 | `Ctrl+O` | `Insert` | Toggle edit mode between **INSERT (INS)** and **OVERWRITE (OVR)** |
@@ -53,9 +57,10 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 | `Ctrl+E` | `E` (Accession Pane only) | Edit selected accession name |
 | `Ctrl+A` | `A` (Accession Pane only) | Add a new empty sequence row |
 | `Ctrl+X` | `X` (Accession Pane only) | Delete current sequence row (requires confirmation) |
-| `Ctrl+V` | `V` (Accession Pane only) | Cycle color visualization modes (**DNA/RNA** ➔ **Protein** ➔ **Monochrome**) |
+| `Ctrl+V` | `V` (Accession Pane only) | Cycle color visualization modes (**DNA/RNA** ➔ **Protein** ➔ **DIFF (variable sites)** ➔ **Monochrome**) |
 | `Ctrl+F` | | Open search prompt (find accession name or sequence motif) |
 | `Ctrl+N` | | Jump to the next search match |
+| `Ctrl+G` | `G` (Accession Pane only) | Export reference-indexed character counts/frequencies and changed-only CSVs |
 | `Ctrl+Z` | `U` (Accession Pane only) | Undo last action |
 | `Ctrl+Y` | `Y` (Accession Pane only) | Redo last action |
 | `Ctrl+S` | `S` (Accession Pane only) | Save current alignment to a FASTA file |

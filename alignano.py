@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# AligNano Version: 1.0.10
 import os
 import sys
 import time
@@ -178,6 +179,7 @@ def read_key():
             "\x1a": "UNDO",
             "\x7f": "DELETE",
             "\x08": "DELETE",
+            "\x07": "EXPORT_FREQ",
             "\r": "ENTER",
             "\n": "ENTER",
             "\t": "TAB",
@@ -234,6 +236,7 @@ def read_key():
                 "\x1a": "UNDO",
                 "\x7f": "DELETE",
                 "\x08": "DELETE",
+                "\x07": "EXPORT_FREQ",
                 "\r": "ENTER",
                 "\n": "ENTER",
                 "\t": "TAB",
@@ -336,16 +339,30 @@ class StateHistory:
 # SCREEN RENDERING LOOP
 # ==============================================================================
 def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offset, 
-                active_pane, filename, insert_mode, vis_mode, modified, 
+                active_pane, filename, insert_mode, vis_mode, modified, acc_width,
                 status_msg="", prompt_mode=None, prompt_text="", prompt_input=""):
     """Composes and renders the entire editor layout to stdout in a single write."""
     cols, rows = shutil.get_terminal_size((80, 24))
     
-    # Dynamically allocate panel widths
-    acc_width = min(25, max(15, int(cols * 0.22)))
     # Borders: left border (1), separator (1), right border (1), safety spacer (1)
     seq_width = cols - acc_width - 4
     view_height = rows - 9 # 3 lines header, 2 lines ruler, 4 lines footer
+    
+    # Calculate non-identical columns for DIFF visualization mode
+    non_identical_cols = set()
+    if vis_mode == 'diff' and sequences:
+        num_seqs_val = len(sequences)
+        seq_len_val = len(sequences[0])
+        for col_idx in range(col_offset, min(seq_len_val, col_offset + seq_width)):
+            first_char = sequences[0][col_idx].upper() if col_idx < len(sequences[0]) else '-'
+            is_identical = True
+            for r in range(1, num_seqs_val):
+                char = sequences[r][col_idx].upper() if col_idx < len(sequences[r]) else '-'
+                if char != first_char:
+                    is_identical = False
+                    break
+            if not is_identical:
+                non_identical_cols.add(col_idx)
     
     if view_height < 1 or seq_width < 1:
         sys.stdout.write("\x1b[H\x1b[2JTerminal too small! Please resize.\n")
@@ -366,9 +383,9 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
     filename_display = os.path.basename(filename) if filename else "[New Alignment]"
     mod_marker = " *" if modified else ""
     mode_marker = "INS" if insert_mode else "OVR"
-    vis_name = "DNA/RNA" if vis_mode == 'nuc' else ("Protein" if vis_mode == 'aa' else "Monochrome")
+    vis_name = "DNA/RNA" if vis_mode == 'nuc' else ("Protein" if vis_mode == 'aa' else ("Diff (Var)" if vis_mode == 'diff' else "Monochrome"))
     
-    header_left = f" # AligNano v1.0.10 # File: {filename_display}{mod_marker} | Mode: {mode_marker} | Colors: {vis_name}"
+    header_left = f" # AligNano # File: {filename_display}{mod_marker} | Mode: {mode_marker} | Colors: {vis_name} | Pane: {acc_width}"
     header_right = f"Seq: {cursor_row+1}/{num_seqs} Col: {cursor_col+1}/{seq_len} "
     
     space_left = cols - 2 - len(header_left) - len(header_right)
@@ -451,6 +468,13 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
                         color = NUC_COLORS.get(c.upper(), DEFAULT_NUC)
                     elif vis_mode == 'aa':
                         color = AA_COLORS.get(c.upper(), DEFAULT_AA)
+                    elif vis_mode == 'diff':
+                        if char_idx in non_identical_cols:
+                            base_mode = detect_vis_mode(sequences)
+                            if base_mode == 'nuc':
+                                color = NUC_COLORS.get(c.upper(), DEFAULT_NUC)
+                            else:
+                                color = AA_COLORS.get(c.upper(), DEFAULT_AA)
                     
                     if is_cursor:
                         if active_pane == 'seq' and not prompt_mode:
@@ -491,13 +515,13 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
         lines.append("|" + status_msg + " " * max(0, space_left) + "|")
     else:
         # Static instructions line
-        help_text = " [Arrows] Move  [Tab] Swap  [Space/-] Gap  [Delete] Delete  [Ctrl+O] Mode"
+        help_text = " [Arrows] Move  [Tab] Swap  [Del] Del  [[/]] Pane  [Ctrl+V] Col  [Ctrl+O] Mode"
         space_left = cols - 2 - len(help_text)
         lines.append("|" + help_text + " " * max(0, space_left) + "|")
         
     # 7. Navigation shortcut help line
     if not prompt_mode:
-        nav_text = " [Ctrl+E] Name  [Ctrl+V] Color  [Ctrl+F] Find  [Ctrl+S] Save  [Ctrl+Q] Quit"
+        nav_text = " [Ctrl+E] Name  [Ctrl+F] Find  [Ctrl+G] Freq  [Ctrl+S] Save  [Ctrl+Q] Quit"
     else:
         nav_text = " [Enter] Confirm  [Escape] Cancel / Exit Prompt"
     space_left = cols - 2 - len(nav_text)
@@ -536,6 +560,7 @@ def run_editor(filepath):
     else:
         vis_mode = detect_vis_mode(sequences)
     modified = False
+    acc_width_delta = 0
     
     history = StateHistory()
     
@@ -557,7 +582,7 @@ def run_editor(filepath):
     while True:
         # Update dynamic dimensions
         cols, rows = shutil.get_terminal_size((80, 24))
-        acc_width = min(25, max(15, int(cols * 0.22)))
+        acc_width = min(50, max(5, int(cols * 0.22) + acc_width_delta))
         seq_width = cols - acc_width - 4
         view_height = rows - 9
         
@@ -593,7 +618,7 @@ def run_editor(filepath):
         # Render frame
         draw_screen(
             headers, sequences, cursor_row, cursor_col, row_offset, col_offset,
-            active_pane, filename, insert_mode, vis_mode, modified,
+            active_pane, filename, insert_mode, vis_mode, modified, acc_width,
             status_msg, prompt_mode, prompt_text, prompt_input
         )
         
@@ -641,6 +666,107 @@ def run_editor(filepath):
                                 status_msg = f"Alignment successfully saved to: {os.path.basename(dest_file)}"
                             except Exception as e:
                                 status_msg = f"Save failed: {str(e)}"
+                            status_expiry = time.time() + 3.0
+                    prompt_mode = None
+                    prompt_input = ""
+                elif prompt_mode == 'export_freq':
+                    prefix = prompt_input.strip() if prompt_input.strip() else "frequencies"
+                    
+                    # Compute output filenames
+                    counts_all_path = prefix + "_counts_all.csv"
+                    counts_changed_path = prefix + "_counts_changed.csv"
+                    freq_all_path = prefix + "_frequencies_all.csv"
+                    freq_changed_path = prefix + "_frequencies_changed.csv"
+                    
+                    target_counts_all = os.path.abspath(counts_all_path)
+                    target_counts_changed = os.path.abspath(counts_changed_path)
+                    target_freq_all = os.path.abspath(freq_all_path)
+                    target_freq_changed = os.path.abspath(freq_changed_path)
+                    
+                    current_dir = os.path.abspath(os.getcwd())
+                    paths = [target_counts_all, target_counts_changed, target_freq_all, target_freq_changed]
+                    
+                    if any(not p.startswith(current_dir) for p in paths):
+                        status_msg = "Error: Access denied (sandbox policy: AligNano folder only)."
+                        status_expiry = time.time() + 4.0
+                    else:
+                        try:
+                            num_seqs = len(sequences)
+                            seq_len = len(sequences[0]) if num_seqs > 0 else 0
+                            
+                            # Dynamically build standard set of unique characters (alphanumeric and gaps)
+                            all_chars_set = set()
+                            for seq in sequences:
+                                for c in seq:
+                                    c_upper = c.upper()
+                                    if c_upper.isalnum() or c_upper == '-':
+                                        all_chars_set.add(c_upper)
+                            all_chars = sorted(list(all_chars_set))
+                            
+                            # Precompute counts and frequencies for all columns
+                            col_data_counts = {char: [] for char in all_chars}
+                            col_data_freq = {char: [] for char in all_chars}
+                            changed_col_indices = []
+                            
+                            for col_idx in range(seq_len):
+                                col_chars = [sequences[r][col_idx].upper() for r in range(num_seqs) if col_idx < len(sequences[r])]
+                                from collections import Counter
+                                counts = Counter(col_chars)
+                                
+                                for char in all_chars:
+                                    cnt = counts.get(char, 0)
+                                    freq = cnt / num_seqs if num_seqs > 0 else 0.0
+                                    col_data_counts[char].append(cnt)
+                                    col_data_freq[char].append(round(freq, 4))
+                                    
+                                if len(set(col_chars)) > 1:
+                                    changed_col_indices.append(col_idx)
+                                    
+                            # CSV Headers (Transposed: Characters on left, 1-indexed positions as columns)
+                            csv_headers_all = ["Character"] + [str(col_idx + 1) for col_idx in range(seq_len)]
+                            csv_headers_changed = ["Character"] + [str(idx + 1) for idx in changed_col_indices]
+                            
+                            counts_all_rows = []
+                            counts_changed_rows = []
+                            freq_all_rows = []
+                            freq_changed_rows = []
+                            
+                            for char in all_chars:
+                                counts_all_rows.append([char] + col_data_counts[char])
+                                freq_all_rows.append([char] + col_data_freq[char])
+                                
+                                counts_changed_rows.append([char] + [col_data_counts[char][idx] for idx in changed_col_indices])
+                                freq_changed_rows.append([char] + [col_data_freq[char][idx] for idx in changed_col_indices])
+                                
+                            # Write counts_all
+                            import csv
+                            with open(target_counts_all, 'w', newline='', encoding='utf-8') as f:
+                                writer = csv.writer(f)
+                                writer.writerow(csv_headers_all)
+                                writer.writerows(counts_all_rows)
+                                
+                            # Write counts_changed
+                            with open(target_counts_changed, 'w', newline='', encoding='utf-8') as f:
+                                writer = csv.writer(f)
+                                writer.writerow(csv_headers_changed)
+                                writer.writerows(counts_changed_rows)
+                                
+                            # Write frequencies_all
+                            with open(target_freq_all, 'w', newline='', encoding='utf-8') as f:
+                                writer = csv.writer(f)
+                                writer.writerow(csv_headers_all)
+                                writer.writerows(freq_all_rows)
+                                
+                            # Write frequencies_changed
+                            with open(target_freq_changed, 'w', newline='', encoding='utf-8') as f:
+                                writer = csv.writer(f)
+                                writer.writerow(csv_headers_changed)
+                                writer.writerows(freq_changed_rows)
+                                
+                            status_msg = f"Exported 4 frequency/count CSVs successfully."
+                            status_expiry = time.time() + 3.0
+                        except Exception as e:
+                            status_msg = f"Export failed: {str(e)}"
                             status_expiry = time.time() + 3.0
                     prompt_mode = None
                     prompt_input = ""
@@ -782,6 +908,15 @@ def run_editor(filepath):
             # Page sequence right (columns)
             cursor_col = min(seq_len - 1, cursor_col + (seq_width - 5))
             
+        elif key == '[':
+            acc_width_delta -= 1
+            status_msg = "Accession panel narrowed."
+            status_expiry = time.time() + 1.0
+        elif key == ']':
+            acc_width_delta += 1
+            status_msg = "Accession panel widened."
+            status_expiry = time.time() + 1.0
+            
         elif key == 'TAB':
             # Switch pane focus
             active_pane = 'seq' if active_pane == 'acc' else 'acc'
@@ -800,11 +935,16 @@ def run_editor(filepath):
             else:
                 if vis_mode == 'nuc':
                     vis_mode = 'aa'
+                    status_msg = "Visual Mode: PROTEIN (ClustalX)"
                 elif vis_mode == 'aa':
+                    vis_mode = 'diff'
+                    status_msg = "Visual Mode: DIFF (Only highlight variable sites)"
+                elif vis_mode == 'diff':
                     vis_mode = 'mono'
+                    status_msg = "Visual Mode: MONOCHROME"
                 else:
                     vis_mode = 'nuc'
-                status_msg = f"Visual Mode: {vis_mode.upper()}"
+                    status_msg = "Visual Mode: DNA/RNA"
             status_expiry = time.time() + 2.0
             
         elif key == 'UNDO' or (is_cmd_mode and key == 'U'):
@@ -855,6 +995,16 @@ def run_editor(filepath):
             prompt_text = "Save as (FASTA file path): "
             prompt_input = filename
             
+        elif key == 'EXPORT_FREQ' or (is_cmd_mode and key == 'G'):
+            # Export frequencies
+            prompt_mode = 'export_freq'
+            prompt_text = "Export prefix: "
+            if filename:
+                base_name = os.path.splitext(os.path.basename(filename))[0]
+            else:
+                base_name = "frequencies"
+            prompt_input = base_name
+            
         elif key == 'DELETE' or (is_cmd_mode and key == 'D'):
             # Delete character to the left of the cursor and shorten sequence
             if cursor_col > 0:
@@ -867,20 +1017,26 @@ def run_editor(filepath):
                 status_expiry = time.time() + 1.5
                 
         elif key == ' ' or key == '-':
-            # Insert Gap at cursor
+            # Insert or overwrite Gap at cursor
             if active_pane == 'seq':
                 history.push_state(headers, sequences)
                 current_seq = sequences[cursor_row]
-                # Insert gap, drop the last char to maintain length OR grow sequence length?
-                # Grow sequence length in all sequences or just this sequence?
-                # If we grow this sequence, pad all others to match!
-                sequences[cursor_row] = current_seq[:cursor_col] + "-" + current_seq[cursor_col:]
                 
-                # Check new max length and pad all others
-                max_len = max(len(s) for s in sequences)
-                for i in range(len(sequences)):
-                    if len(sequences[i]) < max_len:
-                        sequences[i] = sequences[i] + '-' * (max_len - len(sequences[i]))
+                if insert_mode:
+                    # Insert mode: pushes letters right and pads other sequences
+                    sequences[cursor_row] = current_seq[:cursor_col] + "-" + current_seq[cursor_col:]
+                    # Check new max length and pad all others
+                    max_len = max(len(s) for s in sequences)
+                    for i in range(len(sequences)):
+                        if len(sequences[i]) < max_len:
+                            sequences[i] = sequences[i] + '-' * (max_len - len(sequences[i]))
+                else:
+                    # Overwrite mode: replaces character under cursor, maintaining length
+                    if cursor_col < len(current_seq):
+                        sequences[cursor_row] = current_seq[:cursor_col] + "-" + current_seq[cursor_col+1:]
+                    else:
+                        # Append if cursor is past end
+                        sequences[cursor_row] = current_seq + "-"
                         
                 cursor_col += 1
                 modified = True
@@ -942,7 +1098,7 @@ def display_retro_intro(files, selected_idx):
         lines.append(colors['gold'] + " " * pad + bline + colors['reset'])
         
     lines.append(colors['accent'] + "=" * cols + colors['reset'])
-    lines.append(colors['bold'] + "  Multiple Sequence Alignment Editor & Browser  v1.0.10" + colors['reset'])
+    lines.append(colors['bold'] + "  Multiple Sequence Alignment Editor & Browser" + colors['reset'])
     lines.append("  Inspired by ANSI BBSs (80s), tmux, and Antigravity CLI\n")
     
     lines.append("  " + colors['bold'] + "Select a FASTA file from the current workspace or create a new alignment:" + colors['reset'] + "\n")
