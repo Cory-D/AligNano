@@ -152,8 +152,8 @@ def read_key():
                 "win_e0_53": "DELETE",
                 "win_e0_73": "CTRL_LEFT",
                 "win_e0_74": "CTRL_RIGHT",
-                "win_e0_8d": "CTRL_UP",
-                "win_e0_91": "CTRL_DOWN",
+                "win_e0_8d": "MOVE_ROW_UP",
+                "win_e0_91": "MOVE_ROW_DOWN",
             }
             return win_map.get(code, "UNKNOWN")
         
@@ -207,12 +207,16 @@ def read_key():
                         "\x1b[6~": "PAGE_DOWN",
                         "\x1b[2~": "INSERT",
                         "\x1b[3~": "DELETE",
-                        "\x1b[1;5A": "CTRL_UP",
-                        "\x1b[1;5B": "CTRL_DOWN",
+                        "\x1b[1;5A": "MOVE_ROW_UP",
+                        "\x1b[1;5B": "MOVE_ROW_DOWN",
                         "\x1b[1;5C": "CTRL_RIGHT",
                         "\x1b[1;5D": "CTRL_LEFT",
-                        "\x1b[1;2A": "SHIFT_UP",
-                        "\x1b[1;2B": "SHIFT_DOWN",
+                        "\x1b[1;2A": "MOVE_ROW_UP",
+                        "\x1b[1;2B": "MOVE_ROW_DOWN",
+                        "\x1b[1;3A": "MOVE_ROW_UP",
+                        "\x1b[1;3B": "MOVE_ROW_DOWN",
+                        "\x1b\x1b[A": "MOVE_ROW_UP",
+                        "\x1b\x1b[B": "MOVE_ROW_DOWN",
                         "\x1bOA": "KEY_UP",
                         "\x1bOB": "KEY_DOWN",
                         "\x1bOC": "KEY_RIGHT",
@@ -223,6 +227,7 @@ def read_key():
             
             common_map = {
                 "\x01": "ADD_ROW",       # Ctrl+A
+                "\x02": "MOVE_ROW_DOWN",  # Ctrl+B
                 "\x04": "PAGE_DOWN",     # Ctrl+D
                 "\x05": "EDIT_NAME",     # Ctrl+E
                 "\x0b": "DELETE",        # Ctrl+K
@@ -231,6 +236,7 @@ def read_key():
                 "\x11": "QUIT",          # Ctrl+Q
                 "\x12": "PAGE_RIGHT",    # Ctrl+R
                 "\x13": "SAVE",          # Ctrl+S
+                "\x14": "MOVE_ROW_UP",    # Ctrl+T
                 "\x15": "PAGE_UP",       # Ctrl+U
                 "\x16": "CYCLE_COLORS",  # Ctrl+V
                 "\x18": "DELETE_ROW",    # Ctrl+X
@@ -901,10 +907,10 @@ def run_editor(filepath):
                 cursor_col += 1
                 
         # Scrolling Pages
-        elif key == 'PAGE_UP' or key == 'CTRL_UP':
+        elif key == 'PAGE_UP':
             # Page up sequences/accessions (rows)
             cursor_row = max(0, cursor_row - (view_height - 2))
-        elif key == 'PAGE_DOWN' or key == 'CTRL_DOWN':
+        elif key == 'PAGE_DOWN':
             # Page down sequences/accessions (rows)
             cursor_row = min(num_seqs - 1, cursor_row + (view_height - 2))
         elif key == 'PAGE_LEFT' or key == 'CTRL_LEFT':
@@ -914,7 +920,7 @@ def run_editor(filepath):
             # Page sequence right (columns)
             cursor_col = min(seq_len - 1, cursor_col + (seq_width - 5))
             
-        elif key == 'SHIFT_UP':
+        elif key == 'MOVE_ROW_UP':
             if cursor_row > 0:
                 history.push_state(headers, sequences)
                 headers[cursor_row], headers[cursor_row - 1] = headers[cursor_row - 1], headers[cursor_row]
@@ -924,7 +930,7 @@ def run_editor(filepath):
                 status_msg = "Sequence moved up."
                 status_expiry = time.time() + 1.5
                 
-        elif key == 'SHIFT_DOWN':
+        elif key == 'MOVE_ROW_DOWN':
             if cursor_row < len(sequences) - 1:
                 history.push_state(headers, sequences)
                 headers[cursor_row], headers[cursor_row + 1] = headers[cursor_row + 1], headers[cursor_row]

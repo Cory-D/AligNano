@@ -49,8 +49,8 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 | `Tab` or `Ctrl+I` | | Switch focus between the Accession Names pane and the Sequence pane |
 | `[` / `]` | | Decrease / increase Accession Name panel width |
 | `Ctrl+Left` / `Ctrl+Right` / `Ctrl+L` / `Ctrl+R` | | Page sequences horizontally |
-| `Ctrl+Up` / `Ctrl+Down` / `Ctrl+U` / `Ctrl+D` | | Page sequences/accessions vertically |
-| `Shift+Up` / `Shift+Down` | | Re-order sequences: move selected sequence up / down |
+| `Ctrl+U` / `Ctrl+D` | `Page Up` / `Page Down` | Page sequences/accessions vertically |
+| `Ctrl+T` / `Ctrl+B` | `Alt+Up/Down`, `Ctrl+Up/Down`, `Shift+Up/Down` | Re-order sequences: move selected sequence up / down |
 | `Ctrl+O` | `Insert` | Toggle edit mode between **INSERT (INS)** and **OVERWRITE (OVR)** |
 | `Alphanumeric` | | Insert or overwrite nucleotides or amino acids at cursor (in sequence pane) |
 | `Space` or `-` | | Insert alignment gap (`-`) at cursor |
