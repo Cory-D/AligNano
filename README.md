@@ -1,13 +1,13 @@
-# AligNano: Terminal FASTA Editor & Browser
+# AligNano: Terminal FASTA & A3M Alignment Editor
 
 *Version 1.0.10*
 
-A retro-styled, dependency-free Python terminal utility for browsing and editing multiple sequence alignments (MSA) in FASTA format. Designed in the spirit of 1980s ANSI BBSs, tmux, and Antigravity CLI, it provides a color-coded alignment interface modeled after Aliview.
+A lightweight, dependency-free Python terminal interface for browsing and editing multiple sequence alignments (MSA) in FASTA and A3M formats. It provides a real-time color-coded alignment grid, designed for efficient sequence inspection directly from the command line.
 
 ## Features
 
-- 🎮 **BBS-Inspired Interface**: Colorful 80s ANSI ASCII frames, custom logos, and clear status overlays.
-- 🧬 **Aliview-Style Color Coding**:
+- 🖥️ **Command-Line Interface**: Clean, bordered ANSI layouts, real-time status overlays, and interactive file selection menus.
+- 🧬 **Interactive Alignment Color Coding**:
   - **Nucleotides**: A (Red), T/U (Green), C (Blue), G (Yellow), Gaps (Dark Grey).
   - **Amino Acids**: ClustalX-inspired colors based on chemical properties (Acidic: Red, Basic: Blue, Polar: Green, Hydrophobic: Orange/Yellow, Cysteine: Pink, Glycine: Grey).
   - **DIFF Mode**: Selectively highlights only columns containing variable sites (mutations/gaps) to draw focus to polymorphs.
@@ -62,6 +62,7 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 | `Ctrl+X` | `X` (Accession Pane only) | Delete current sequence row (requires confirmation) |
 | `Ctrl+V` | `V` (Accession Pane only) | Cycle color visualization modes (**DNA/RNA** ➔ **Protein** ➔ **DIFF (variable sites)** ➔ **Monochrome**) |
 | `Ctrl+P` | `P` (Accession Pane only) | Toggle alignment file save format (**FASTA** ➔ **A3M** ➔ **FASTA**) |
+| `Ctrl+W` | `C` (Accession Pane only) | Sort/cluster sequences by Levenshtein distance relative to the top reference sequence |
 | `Ctrl+F` | | Open search prompt (find accession name or sequence motif) |
 | `Ctrl+J` | | Jump to the next search match |
 | `Ctrl+G` | `G` (Accession Pane only) | Export transposed character counts/frequencies (all and polymorphic-only) CSVs |
@@ -74,6 +75,6 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 
 ## Sample Alignments Included
 
-We have created two pre-loaded sample alignment files in the workspace:
-1. `dna_sample.fasta` - Aligned coding DNA sequences (CDS) of mammalian alpha-synuclein (SNCA) (human, mouse, rat).
-2. `protein_sample.fasta` - Aligned protein sequences of mammalian alpha-synuclein (SNCA) (human, mouse, rat).
+We have provided two curated, biologically authentic, codon-aligned eukaryotic ubiquitin alignments:
+1. `ubiquitin_dna.fasta` - Codon-aligned mature ubiquitin DNA coding sequences (228 bp) from 20 diverse eukaryotic species.
+2. `ubiquitin_protein.fasta` - Aligned mature ubiquitin protein sequences (76 AA) from the same 20 eukaryotic species.

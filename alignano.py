@@ -178,6 +178,7 @@ def read_key():
             "\x14": "TOGGLE_MOVE",    # Ctrl+T
             "\x15": "PAGE_UP",       # Ctrl+U
             "\x16": "CYCLE_COLORS",  # Ctrl+V
+            "\x17": "SORT_DIST",     # Ctrl+W
             "\x18": "DELETE_ROW",    # Ctrl+X
             "\x19": "REDO",          # Ctrl+Y
             "\x1a": "UNDO",
@@ -239,6 +240,7 @@ def read_key():
                 "\x14": "TOGGLE_MOVE",    # Ctrl+T
                 "\x15": "PAGE_UP",       # Ctrl+U
                 "\x16": "CYCLE_COLORS",  # Ctrl+V
+                "\x17": "SORT_DIST",     # Ctrl+W
                 "\x18": "DELETE_ROW",    # Ctrl+X
                 "\x19": "REDO",          # Ctrl+Y
                 "\x1a": "UNDO",
@@ -383,6 +385,29 @@ def fasta_to_a3m(sequences):
                 a3m_seqs[s_idx].append(c.upper())
                 
     return ["".join(s) for s in a3m_seqs]
+
+def levenshtein_distance(s1, s2):
+    """Calculates Levenshtein distance between s1 and s2 (excluding gaps)."""
+    seq1 = s1.replace('-', '')
+    seq2 = s2.replace('-', '')
+    
+    if len(seq1) < len(seq2):
+        return levenshtein_distance(seq2, seq1)
+    
+    if len(seq2) == 0:
+        return len(seq1)
+    
+    previous_row = range(len(seq2) + 1)
+    for i, c1 in enumerate(seq1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(seq2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+        
+    return previous_row[-1]
 
 def save_fasta(filepath, headers, sequences):
     """Saves headers and sequences to FASTA format."""
@@ -718,7 +743,7 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
         space_left = cols - 2 - len(status_msg)
         lines.append("|" + status_msg + " " * max(0, space_left) + "|")
     else:
-        help_text = " [Arrows] Move  [Tab] Swap  [Del] Del  [[/]] Pane  [Ctrl+V] Color  [Ctrl+P] Format"
+        help_text = " [Arrows] Move  [Tab] Swap  [Del] Del  [Ctrl+W] Sort  [Ctrl+V] Color  [Ctrl+P] Format"
         space_left = cols - 2 - len(help_text)
         lines.append("|" + help_text + " " * max(0, space_left) + "|")
         
@@ -1211,6 +1236,28 @@ def run_editor(filepath):
             status_msg = f"Alignment Format toggled to: {alignment_format.upper()}"
             status_expiry = time.time() + 2.0
             
+        elif key == 'SORT_DIST' or (is_cmd_mode and key in ('C', 'c')):
+            if num_seqs <= 1:
+                status_msg = "Nothing to sort."
+            else:
+                history.push_state(headers, sequences)
+                ref_seq = sequences[0]
+                
+                sub_rows = []
+                for h, s in zip(headers[1:], sequences[1:]):
+                    dist = levenshtein_distance(ref_seq, s)
+                    sub_rows.append((h, s, dist))
+                
+                # Sort ascending by Levenshtein distance
+                sub_rows.sort(key=lambda x: x[2])
+                
+                # Reconstruct
+                headers = [headers[0]] + [item[0] for item in sub_rows]
+                sequences = [sequences[0]] + [item[1] for item in sub_rows]
+                modified = True
+                status_msg = "Sequences sorted by Levenshtein distance to top sequence. Press Ctrl+Z to undo."
+            status_expiry = time.time() + 3.0
+            
         elif key == 'UNDO' or (is_cmd_mode and key in ('U', 'u')):
             restored = history.undo(headers, sequences)
             if restored:
@@ -1378,7 +1425,7 @@ def display_retro_intro(files, selected_idx):
         
     lines.append(colors['accent'] + "=" * cols + colors['reset'])
     lines.append(colors['bold'] + "  Multiple Sequence Alignment Editor & Browser" + colors['reset'])
-    lines.append("  Inspired by ANSI BBSs (80s), tmux, and Antigravity CLI\n")
+    lines.append("  Interactive Terminal Grid Viewer & Editor\n")
     
     lines.append("  " + colors['bold'] + "Select a FASTA file from the current workspace or create a new alignment:" + colors['reset'] + "\n")
     
@@ -1410,6 +1457,9 @@ def main():
     valid_exts = ('.fasta', '.fa', '.msa', '.seq')
     for f in sorted(os.listdir('.')):
         if os.path.isfile(f) and f.lower().endswith(valid_exts):
+            # Exclude hard-coded example alignments from the interactive start screen
+            if f in ('dna_sample.fasta', 'protein_sample.fasta'):
+                continue
             workspace_files.append(f)
             
     # Add options for new files and quitting
