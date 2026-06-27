@@ -11,6 +11,8 @@ A retro-styled, dependency-free Python terminal utility for browsing and editing
   - **Nucleotides**: A (Red), T/U (Green), C (Blue), G (Yellow), Gaps (Dark Grey).
   - **Amino Acids**: ClustalX-inspired colors based on chemical properties (Acidic: Red, Basic: Blue, Polar: Green, Hydrophobic: Orange/Yellow, Cysteine: Pink, Glycine: Grey).
   - **DIFF Mode**: Selectively highlights only columns containing variable sites (mutations/gaps) to draw focus to polymorphs.
+- 📊 **Dynamic Consensus & Conservation**: Real-time bottom-row ruler showing conservation levels (Bold Green for 100% identity, Bold White for >=80% conservation, lowercase for >=50%, and grey dots for polymorphic sites).
+- 🔍 **Active Search & Live Highlights**: Search accession names or sequence motifs (`Ctrl+F`), instantly highlighting all matches across the viewport in high-contrast cyan.
 - 🔀 **Synced Side-by-Side Panes**: Left-hand pane for accession names, right-hand pane for sequences. Scrolls in vertical synchronization.
 - ⌨️ **Intuitive Keyboard Controls**:
   - **Arrow keys**: Cell-by-cell navigation and intuitive focus swapping between panes.
@@ -50,17 +52,18 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 | `[` / `]` | | Decrease / increase Accession Name panel width |
 | `Ctrl+Left` / `Ctrl+Right` / `Ctrl+L` / `Ctrl+R` | | Page sequences horizontally |
 | `Ctrl+U` / `Ctrl+D` | `Page Up` / `Page Down` | Page sequences/accessions vertically |
-| `Ctrl+T` / `Ctrl+B` | `Alt+Up/Down`, `Ctrl+Up/Down`, `Shift+Up/Down` | Re-order sequences: move selected sequence up / down |
+| `Ctrl+T` | `T` (Accession Pane only) | Toggle dedicated **MOVE SEQUENCE (MOV)** mode (then use normal **Up/Down** arrows to shift it) |
 | `Ctrl+O` | `Insert` | Toggle edit mode between **INSERT (INS)** and **OVERWRITE (OVR)** |
 | `Alphanumeric` | | Insert or overwrite nucleotides or amino acids at cursor (in sequence pane) |
 | `Space` or `-` | | Insert alignment gap (`-`) at cursor |
-| `Ctrl+K` | `Delete` / `D` (Accession Pane only) | Delete sequence character to the left of the cursor (shortens sequence) |
+| `Ctrl+K` | `Delete` / `D` (Accession Pane only) | In Sequence Pane: delete base to the left of the cursor; In Accession Pane: delete current sequence row (with confirmation) |
 | `Ctrl+E` | `E` (Accession Pane only) | Edit selected accession name |
-| `Ctrl+A` | `A` (Accession Pane only) | Add a new empty sequence row |
+| `Ctrl+N` / `Ctrl+A` | `N` / `A` (Accession Pane only) | Add a new empty sequence row |
 | `Ctrl+X` | `X` (Accession Pane only) | Delete current sequence row (requires confirmation) |
 | `Ctrl+V` | `V` (Accession Pane only) | Cycle color visualization modes (**DNA/RNA** ➔ **Protein** ➔ **DIFF (variable sites)** ➔ **Monochrome**) |
+| `Ctrl+P` | `P` (Accession Pane only) | Toggle alignment file save format (**FASTA** ➔ **A3M** ➔ **FASTA**) |
 | `Ctrl+F` | | Open search prompt (find accession name or sequence motif) |
-| `Ctrl+N` | | Jump to the next search match |
+| `Ctrl+J` | | Jump to the next search match |
 | `Ctrl+G` | `G` (Accession Pane only) | Export transposed character counts/frequencies (all and polymorphic-only) CSVs |
 | `Ctrl+Z` | `U` (Accession Pane only) | Undo last action |
 | `Ctrl+Y` | `Y` (Accession Pane only) | Redo last action |

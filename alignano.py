@@ -152,8 +152,8 @@ def read_key():
                 "win_e0_53": "DELETE",
                 "win_e0_73": "CTRL_LEFT",
                 "win_e0_74": "CTRL_RIGHT",
-                "win_e0_8d": "MOVE_ROW_UP",
-                "win_e0_91": "MOVE_ROW_DOWN",
+                "win_e0_8d": "CTRL_UP",
+                "win_e0_91": "CTRL_DOWN",
             }
             return win_map.get(code, "UNKNOWN")
         
@@ -166,12 +166,16 @@ def read_key():
             "\x01": "ADD_ROW",       # Ctrl+A
             "\x04": "PAGE_DOWN",     # Ctrl+D
             "\x05": "EDIT_NAME",     # Ctrl+E
+            "\x06": "SEARCH",        # Ctrl+F
             "\x0b": "DELETE",        # Ctrl+K
             "\x0c": "PAGE_LEFT",     # Ctrl+L
+            "\x0e": "ADD_ROW",       # Ctrl+N
             "\x0f": "INSERT",        # Ctrl+O
+            "\x10": "TOGGLE_FORMAT",  # Ctrl+P
             "\x11": "QUIT",          # Ctrl+Q
             "\x12": "PAGE_RIGHT",    # Ctrl+R
             "\x13": "SAVE",          # Ctrl+S
+            "\x14": "TOGGLE_MOVE",    # Ctrl+T
             "\x15": "PAGE_UP",       # Ctrl+U
             "\x16": "CYCLE_COLORS",  # Ctrl+V
             "\x18": "DELETE_ROW",    # Ctrl+X
@@ -181,7 +185,7 @@ def read_key():
             "\x08": "DELETE",
             "\x07": "EXPORT_FREQ",
             "\r": "ENTER",
-            "\n": "ENTER",
+            "\n": "FIND_NEXT",       # Ctrl+J
             "\t": "TAB",
             "\x1b": "ESCAPE",
         }
@@ -207,16 +211,10 @@ def read_key():
                         "\x1b[6~": "PAGE_DOWN",
                         "\x1b[2~": "INSERT",
                         "\x1b[3~": "DELETE",
-                        "\x1b[1;5A": "MOVE_ROW_UP",
-                        "\x1b[1;5B": "MOVE_ROW_DOWN",
+                        "\x1b[1;5A": "CTRL_UP",
+                        "\x1b[1;5B": "CTRL_DOWN",
                         "\x1b[1;5C": "CTRL_RIGHT",
                         "\x1b[1;5D": "CTRL_LEFT",
-                        "\x1b[1;2A": "MOVE_ROW_UP",
-                        "\x1b[1;2B": "MOVE_ROW_DOWN",
-                        "\x1b[1;3A": "MOVE_ROW_UP",
-                        "\x1b[1;3B": "MOVE_ROW_DOWN",
-                        "\x1b\x1b[A": "MOVE_ROW_UP",
-                        "\x1b\x1b[B": "MOVE_ROW_DOWN",
                         "\x1bOA": "KEY_UP",
                         "\x1bOB": "KEY_DOWN",
                         "\x1bOC": "KEY_RIGHT",
@@ -227,16 +225,18 @@ def read_key():
             
             common_map = {
                 "\x01": "ADD_ROW",       # Ctrl+A
-                "\x02": "MOVE_ROW_DOWN",  # Ctrl+B
                 "\x04": "PAGE_DOWN",     # Ctrl+D
                 "\x05": "EDIT_NAME",     # Ctrl+E
+                "\x06": "SEARCH",        # Ctrl+F
                 "\x0b": "DELETE",        # Ctrl+K
                 "\x0c": "PAGE_LEFT",     # Ctrl+L
+                "\x0e": "ADD_ROW",       # Ctrl+N
                 "\x0f": "INSERT",        # Ctrl+O
+                "\x10": "TOGGLE_FORMAT",  # Ctrl+P
                 "\x11": "QUIT",          # Ctrl+Q
                 "\x12": "PAGE_RIGHT",    # Ctrl+R
                 "\x13": "SAVE",          # Ctrl+S
-                "\x14": "MOVE_ROW_UP",    # Ctrl+T
+                "\x14": "TOGGLE_MOVE",    # Ctrl+T
                 "\x15": "PAGE_UP",       # Ctrl+U
                 "\x16": "CYCLE_COLORS",  # Ctrl+V
                 "\x18": "DELETE_ROW",    # Ctrl+X
@@ -246,7 +246,7 @@ def read_key():
                 "\x08": "DELETE",
                 "\x07": "EXPORT_FREQ",
                 "\r": "ENTER",
-                "\n": "ENTER",
+                "\n": "FIND_NEXT",       # Ctrl+J
                 "\t": "TAB",
             }
             return common_map.get(ch, ch)
@@ -290,6 +290,99 @@ def load_fasta(filepath):
     
     # If file was empty, return empty lists
     return headers, sequences
+
+def a3m_to_fasta(a3m_seqs):
+    """Converts a list of query-anchored A3M sequences to standard aligned FASTA sequences."""
+    if not a3m_seqs:
+        return []
+    
+    num_seqs = len(a3m_seqs)
+    parsed_seqs = []
+    for seq in a3m_seqs:
+        match_states = []
+        pre_insertions = []
+        
+        idx = 0
+        while idx < len(seq) and seq[idx].islower():
+            pre_insertions.append(seq[idx].upper())
+            idx += 1
+            
+        current_insertions = []
+        while idx < len(seq):
+            c = seq[idx]
+            if c.islower():
+                current_insertions.append(c.upper())
+            else:
+                if match_states:
+                    match_states[-1][1].extend(current_insertions)
+                else:
+                    pre_insertions.extend(current_insertions)
+                current_insertions = []
+                match_states.append((c, []))
+            idx += 1
+        if match_states:
+            match_states[-1][1].extend(current_insertions)
+        else:
+            pre_insertions.extend(current_insertions)
+            
+        parsed_seqs.append((pre_insertions, match_states))
+        
+    max_pre = max(len(p[0]) for p in parsed_seqs) if parsed_seqs else 0
+    aligned_seqs = [[] for _ in range(num_seqs)]
+    
+    for s_idx in range(num_seqs):
+        pre_ins = parsed_seqs[s_idx][0]
+        aligned_seqs[s_idx].extend(pre_ins)
+        aligned_seqs[s_idx].extend(['-'] * (max_pre - len(pre_ins)))
+        
+    query_match_states_count = len(parsed_seqs[0][1]) if parsed_seqs else 0
+    
+    for col_idx in range(query_match_states_count):
+        for s_idx in range(num_seqs):
+            m_states = parsed_seqs[s_idx][1]
+            if col_idx < len(m_states):
+                aligned_seqs[s_idx].append(m_states[col_idx][0])
+            else:
+                aligned_seqs[s_idx].append('-')
+                
+        max_post = 0
+        for s_idx in range(num_seqs):
+            m_states = parsed_seqs[s_idx][1]
+            if col_idx < len(m_states):
+                max_post = max(max_post, len(m_states[col_idx][1]))
+                
+        if max_post > 0:
+            for s_idx in range(num_seqs):
+                m_states = parsed_seqs[s_idx][1]
+                post_ins = m_states[col_idx][1] if col_idx < len(m_states) else []
+                aligned_seqs[s_idx].extend(post_ins)
+                aligned_seqs[s_idx].extend(['-'] * (max_post - len(post_ins)))
+                
+    return ["".join(s) for s in aligned_seqs]
+
+def fasta_to_a3m(sequences):
+    """Converts standard aligned FASTA sequences to query-anchored A3M sequences."""
+    if not sequences:
+        return []
+    
+    num_seqs = len(sequences)
+    seq_len = len(sequences[0])
+    
+    a3m_seqs = [[] for _ in range(num_seqs)]
+    
+    for col_idx in range(seq_len):
+        query_char = sequences[0][col_idx]
+        if query_char == '-':
+            for s_idx in range(num_seqs):
+                c = sequences[s_idx][col_idx]
+                if c != '-':
+                    a3m_seqs[s_idx].append(c.lower())
+        else:
+            for s_idx in range(num_seqs):
+                c = sequences[s_idx][col_idx]
+                a3m_seqs[s_idx].append(c.upper())
+                
+    return ["".join(s) for s in a3m_seqs]
 
 def save_fasta(filepath, headers, sequences):
     """Saves headers and sequences to FASTA format."""
@@ -348,13 +441,16 @@ class StateHistory:
 # ==============================================================================
 def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offset, 
                 active_pane, filename, insert_mode, vis_mode, modified, acc_width,
-                status_msg="", prompt_mode=None, prompt_text="", prompt_input=""):
+                status_msg="", prompt_mode=None, prompt_text="", prompt_input="",
+                move_mode=False, search_query="", search_matches=None, alignment_format="fasta"):
     """Composes and renders the entire editor layout to stdout in a single write."""
     cols, rows = shutil.get_terminal_size((80, 24))
+    num_seqs = len(sequences)
+    seq_len = len(sequences[0]) if num_seqs > 0 else 0
     
     # Borders: left border (1), separator (1), right border (1), safety spacer (1)
     seq_width = cols - acc_width - 4
-    view_height = rows - 9 # 3 lines header, 2 lines ruler, 4 lines footer
+    view_height = rows - 10 if num_seqs > 0 else rows - 9
     
     # Calculate non-identical columns for DIFF visualization mode
     non_identical_cols = set()
@@ -376,9 +472,7 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
         sys.stdout.write("\x1b[H\x1b[2JTerminal too small! Please resize.\n")
         sys.stdout.flush()
         return
-
-    num_seqs = len(sequences)
-    seq_len = len(sequences[0]) if num_seqs > 0 else 0
+        
     has_256 = supports_256_colors()
     colors_theme = get_theme_colors()
     
@@ -390,10 +484,11 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
     # 2. Header Status Line
     filename_display = os.path.basename(filename) if filename else "[New Alignment]"
     mod_marker = " *" if modified else ""
-    mode_marker = "INS" if insert_mode else "OVR"
+    mode_marker = "MOV" if move_mode else ("INS" if insert_mode else "OVR")
     vis_name = "DNA/RNA" if vis_mode == 'nuc' else ("Protein" if vis_mode == 'aa' else ("Diff (Var)" if vis_mode == 'diff' else "Monochrome"))
+    format_marker = alignment_format.upper()
     
-    header_left = f" # AligNano # File: {filename_display}{mod_marker} | Mode: {mode_marker} | Colors: {vis_name} | Pane: {acc_width}"
+    header_left = f" # AligNano # File: {filename_display}{mod_marker} | Mode: {mode_marker} | Colors: {vis_name} | Format: {format_marker} | Pane: {acc_width}"
     header_right = f"Seq: {cursor_row+1}/{num_seqs} Col: {cursor_col+1}/{seq_len} "
     
     space_left = cols - 2 - len(header_left) - len(header_right)
@@ -438,21 +533,57 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
         acc_part = ""
         if seq_idx < num_seqs:
             name = headers[seq_idx]
-            disp_name = name[:acc_width]
-            disp_name = disp_name + " " * (acc_width - len(disp_name))
+            disp_name = name[:acc_width].ljust(acc_width)
             
-            if seq_idx == cursor_row:
-                if active_pane == 'acc' and not prompt_mode:
-                    # Inverted text for active cursor in accession list
-                    acc_part = f"\x1b[7m\x1b[1m{disp_name}\x1b[0m"
-                else:
-                    # Secondary highlight for cursor row alignment
-                    if has_256:
-                        acc_part = f"\x1b[48;5;238m\x1b[38;5;231m{disp_name}\x1b[0m"
+            # Check if this row contains an accession search match
+            row_acc_matches = []
+            if search_query and search_matches:
+                for r, c_start, pane in search_matches:
+                    if pane == 'acc' and r == seq_idx:
+                        row_acc_matches.append((c_start, len(search_query)))
+            
+            # Render accession name
+            if row_acc_matches:
+                acc_part = ""
+                for char_idx in range(acc_width):
+                    c = disp_name[char_idx]
+                    
+                    is_match_char = any(c_start <= char_idx < c_start + match_len for c_start, match_len in row_acc_matches)
+                    is_cursor = (seq_idx == cursor_row and active_pane == 'acc' and not prompt_mode)
+                    
+                    if is_cursor:
+                        # Cursor wins: full row highlight in magenta
+                        if has_256:
+                            acc_part += f"\x1b[48;5;198m\x1b[38;5;231m\x1b[1m{c}\x1b[0m"
+                        else:
+                            acc_part += f"\x1b[7m\x1b[1m{c}\x1b[0m"
+                    elif is_match_char:
+                        # Highlight search match in cyan
+                        if has_256:
+                            acc_part += f"\x1b[48;5;45m\x1b[38;5;16m\x1b[1m{c}\x1b[0m"
+                        else:
+                            acc_part += f"\x1b[7m{c}\x1b[0m"
+                    elif seq_idx == cursor_row:
+                        if has_256:
+                            acc_part += f"\x1b[48;5;238m\x1b[38;5;231m{c}\x1b[0m"
+                        else:
+                            acc_part += f"\x1b[2m{c}\x1b[0m"
                     else:
-                        acc_part = f"\x1b[2m{disp_name}\x1b[0m"
+                        acc_part += c
             else:
-                acc_part = disp_name
+                # No matches in this accession name
+                if seq_idx == cursor_row:
+                    if active_pane == 'acc' and not prompt_mode:
+                        # Inverted text for active cursor in accession list
+                        acc_part = f"\x1b[7m\x1b[1m{disp_name}\x1b[0m"
+                    else:
+                        # Secondary highlight for cursor row alignment
+                        if has_256:
+                            acc_part = f"\x1b[48;5;238m\x1b[38;5;231m{disp_name}\x1b[0m"
+                        else:
+                            acc_part = f"\x1b[2m{disp_name}\x1b[0m"
+                else:
+                    acc_part = disp_name
         else:
             acc_part = " " * acc_width
             
@@ -484,6 +615,15 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
                             else:
                                 color = AA_COLORS.get(c.upper(), DEFAULT_AA)
                     
+                    # Check search match
+                    is_search_match = False
+                    if search_query and search_matches:
+                        for r, c_start, pane in search_matches:
+                            if pane == 'seq' and r == seq_idx:
+                                if c_start <= char_idx < c_start + len(search_query):
+                                    is_search_match = True
+                                    break
+                    
                     if is_cursor:
                         if active_pane == 'seq' and not prompt_mode:
                             # Highlight cursor block
@@ -497,6 +637,12 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
                                 seq_part += f"\x1b[48;5;238m\x1b[38;5;231m{c}\x1b[0m"
                             else:
                                 seq_part += f"\x1b[4m{c}\x1b[0m"
+                    elif is_search_match:
+                        # Highlight search matches in bright cyan
+                        if has_256:
+                            seq_part += f"\x1b[48;5;45m\x1b[38;5;16m\x1b[1m{c}\x1b[0m"
+                        else:
+                            seq_part += f"\x1b[7m{c}\x1b[0m"
                     else:
                         if color and has_256 and vis_mode != 'mono':
                             seq_part += f"{color}{c}\x1b[0m"
@@ -508,6 +654,56 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
             seq_part = " " * seq_width
             
         lines.append(f"|{acc_part}{divider}{seq_part}|")
+            
+    # 4.1. Consensus Row
+    if num_seqs > 0:
+        # Accession column
+        con_label = "Consensus"
+        acc_part = colors_theme['bold'] + con_label.ljust(acc_width)[:acc_width] + colors_theme['reset']
+        
+        # Sequence column
+        seq_part = ""
+        for col_i in range(seq_width):
+            col_idx = col_offset + col_i
+            if col_idx < seq_len:
+                # Collect residues in this column
+                col_chars = [sequences[r][col_idx].upper() for r in range(num_seqs) if col_idx < len(sequences[r])]
+                
+                from collections import Counter
+                counts = Counter(col_chars)
+                if counts:
+                    most_common_char, most_common_count = counts.most_common(1)[0]
+                    freq = most_common_count / num_seqs
+                    
+                    if freq == 1.0:
+                        # 100% identical: Bold Green
+                        res = most_common_char.upper()
+                        if has_256:
+                            seq_part += f"\x1b[1;38;5;46m{res}\x1b[0m"
+                        else:
+                            seq_part += f"\x1b[1m{res}\x1b[0m"
+                    elif freq >= 0.8:
+                        # >=80%: Bold White
+                        res = most_common_char.upper()
+                        if has_256:
+                            seq_part += f"\x1b[1;38;5;231m{res}\x1b[0m"
+                        else:
+                            seq_part += f"\x1b[1m{res}\x1b[0m"
+                    elif freq >= 0.5:
+                        # >=50%: Normal lowercase
+                        res = most_common_char.lower()
+                        seq_part += res
+                    else:
+                        # <50%: Dark grey dot
+                        if has_256:
+                            seq_part += "\x1b[38;5;242m.\x1b[0m"
+                        else:
+                            seq_part += "."
+                else:
+                    seq_part += " "
+            else:
+                seq_part += " "
+        lines.append(f"|{acc_part}|{seq_part}|")
         
     # 5. Footer separator (ASCII)
     lines.append("+" + "-" * acc_width + "+" + "-" * (cols - acc_width - 3) + "+")
@@ -522,13 +718,14 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
         space_left = cols - 2 - len(status_msg)
         lines.append("|" + status_msg + " " * max(0, space_left) + "|")
     else:
-        # Static instructions line
-        help_text = " [Arrows] Move  [Tab] Swap  [Del] Del  [[/]] Pane  [Ctrl+V] Color [Ctrl+O] Mode"
+        help_text = " [Arrows] Move  [Tab] Swap  [Del] Del  [[/]] Pane  [Ctrl+V] Color  [Ctrl+P] Format"
         space_left = cols - 2 - len(help_text)
         lines.append("|" + help_text + " " * max(0, space_left) + "|")
         
     # 7. Navigation shortcut help line
-    if not prompt_mode:
+    if move_mode:
+        nav_text = " [Ctrl+T] Exit Move Mode"
+    elif not prompt_mode:
         nav_text = " [Ctrl+E] Name  [Ctrl+F] Find  [Ctrl+G] Freq  [Ctrl+S] Save  [Ctrl+Q] Quit"
     else:
         nav_text = " [Enter] Confirm  [Escape] Cancel / Exit Prompt"
@@ -569,6 +766,17 @@ def run_editor(filepath):
         vis_mode = detect_vis_mode(sequences)
     modified = False
     acc_width_delta = 0
+    move_mode = False
+    alignment_format = 'fasta'
+    
+    # Auto-detect format from file extension
+    if filepath and filepath.lower().endswith('.a3m'):
+        alignment_format = 'a3m'
+        try:
+            sequences = a3m_to_fasta(sequences)
+        except Exception as e:
+            status_msg = f"Failed to parse A3M: {str(e)}"
+            status_expiry = time.time() + 4.0
     
     history = StateHistory()
     
@@ -627,7 +835,9 @@ def run_editor(filepath):
         draw_screen(
             headers, sequences, cursor_row, cursor_col, row_offset, col_offset,
             active_pane, filename, insert_mode, vis_mode, modified, acc_width,
-            status_msg, prompt_mode, prompt_text, prompt_input
+            status_msg, prompt_mode, prompt_text, prompt_input,
+            move_mode=move_mode, search_query=search_query, search_matches=search_matches,
+            alignment_format=alignment_format
         )
         
         # Read user keystroke
@@ -639,6 +849,28 @@ def run_editor(filepath):
             sys.stdout.flush()
             continue
         
+        # Move mode shortcut interceptor
+        if move_mode:
+            if key == 'KEY_UP':
+                if cursor_row > 0:
+                    history.push_state(headers, sequences)
+                    headers[cursor_row], headers[cursor_row - 1] = headers[cursor_row - 1], headers[cursor_row]
+                    sequences[cursor_row], sequences[cursor_row - 1] = sequences[cursor_row - 1], sequences[cursor_row]
+                    cursor_row -= 1
+                    modified = True
+            elif key == 'KEY_DOWN':
+                if cursor_row < len(sequences) - 1:
+                    history.push_state(headers, sequences)
+                    headers[cursor_row], headers[cursor_row + 1] = headers[cursor_row + 1], headers[cursor_row]
+                    sequences[cursor_row], sequences[cursor_row + 1] = sequences[cursor_row + 1], sequences[cursor_row]
+                    cursor_row += 1
+                    modified = True
+            elif key in ('ENTER', 'ESCAPE', 'TOGGLE_MOVE'):
+                move_mode = False
+                status_msg = "Exited Move Mode."
+                status_expiry = time.time() + 1.5
+            continue
+            
         # Prompt mode processing
         if prompt_mode:
             if key == 'ESCAPE':
@@ -659,16 +891,24 @@ def run_editor(filepath):
                 elif prompt_mode == 'save_file':
                     dest_file = prompt_input.strip()
                     if dest_file:
-                        # Restrict reads/writes within the sandbox AligNano (or child directories)
-                        # Normalize path
-                        full_path = os.path.abspath(dest_file)
+                        # Auto-toggle format based on destination file extension
+                        if dest_file.lower().endswith('.a3m'):
+                            alignment_format = 'a3m'
+                        elif dest_file.lower().endswith(('.fasta', '.fa', '.fas')):
+                            alignment_format = 'fasta'
+                            
                         current_dir = os.path.abspath(os.getcwd())
-                        if not full_path.startswith(current_dir):
+                        dest_abs = os.path.abspath(dest_file)
+                        if not dest_abs.startswith(current_dir):
                             status_msg = "Error: Access denied (sandbox policy: AligNano folder only)."
                             status_expiry = time.time() + 4.0
                         else:
                             try:
-                                save_fasta(dest_file, headers, sequences)
+                                if alignment_format == 'a3m':
+                                    save_seqs = fasta_to_a3m(sequences)
+                                else:
+                                    save_seqs = sequences
+                                save_fasta(dest_file, headers, save_seqs)
                                 filename = dest_file
                                 modified = False
                                 status_msg = f"Alignment successfully saved to: {os.path.basename(dest_file)}"
@@ -860,7 +1100,7 @@ def run_editor(filepath):
         # Normal command controls
         is_cmd_mode = (active_pane == 'acc')
         
-        if key == 'QUIT' or (is_cmd_mode and key == 'Q'):
+        if key == 'QUIT' or (is_cmd_mode and key in ('Q', 'q')):
             if modified:
                 prompt_mode = 'quit_confirm'
                 prompt_text = "Unsaved changes! Quit anyway? (y/N): "
@@ -920,25 +1160,12 @@ def run_editor(filepath):
             # Page sequence right (columns)
             cursor_col = min(seq_len - 1, cursor_col + (seq_width - 5))
             
-        elif key == 'MOVE_ROW_UP':
-            if cursor_row > 0:
-                history.push_state(headers, sequences)
-                headers[cursor_row], headers[cursor_row - 1] = headers[cursor_row - 1], headers[cursor_row]
-                sequences[cursor_row], sequences[cursor_row - 1] = sequences[cursor_row - 1], sequences[cursor_row]
-                cursor_row -= 1
-                modified = True
-                status_msg = "Sequence moved up."
-                status_expiry = time.time() + 1.5
+
                 
-        elif key == 'MOVE_ROW_DOWN':
-            if cursor_row < len(sequences) - 1:
-                history.push_state(headers, sequences)
-                headers[cursor_row], headers[cursor_row + 1] = headers[cursor_row + 1], headers[cursor_row]
-                sequences[cursor_row], sequences[cursor_row + 1] = sequences[cursor_row + 1], sequences[cursor_row]
-                cursor_row += 1
-                modified = True
-                status_msg = "Sequence moved down."
-                status_expiry = time.time() + 1.5
+        elif key == 'TOGGLE_MOVE' or (is_cmd_mode and key in ('T', 't')):
+            move_mode = True
+            status_msg = "Entered Move Mode (Use Up/Down arrows to move sequence)"
+            status_expiry = time.time() + 3.0
             
         elif key == '[':
             acc_width_delta -= 1
@@ -959,7 +1186,7 @@ def run_editor(filepath):
             status_msg = f"Edit Mode: {'INSERT' if insert_mode else 'OVERWRITE'}"
             status_expiry = time.time() + 2.0
             
-        elif key == 'CYCLE_COLORS' or (is_cmd_mode and key == 'V'):
+        elif key == 'CYCLE_COLORS' or (is_cmd_mode and key in ('V', 'v')):
             # Toggle visualization mode
             if not supports_256_colors():
                 vis_mode = 'mono'
@@ -979,7 +1206,12 @@ def run_editor(filepath):
                     status_msg = "Visual Mode: DNA/RNA"
             status_expiry = time.time() + 2.0
             
-        elif key == 'UNDO' or (is_cmd_mode and key == 'U'):
+        elif key == 'TOGGLE_FORMAT' or (is_cmd_mode and key in ('P', 'p')):
+            alignment_format = 'a3m' if alignment_format == 'fasta' else 'fasta'
+            status_msg = f"Alignment Format toggled to: {alignment_format.upper()}"
+            status_expiry = time.time() + 2.0
+            
+        elif key == 'UNDO' or (is_cmd_mode and key in ('U', 'u')):
             restored = history.undo(headers, sequences)
             if restored:
                 headers, sequences = restored
@@ -989,7 +1221,7 @@ def run_editor(filepath):
                 status_msg = "Nothing to undo."
             status_expiry = time.time() + 2.0
             
-        elif key == 'REDO' or (is_cmd_mode and key == 'Y'):
+        elif key == 'REDO' or (is_cmd_mode and key in ('Y', 'y')):
             restored = history.redo(headers, sequences)
             if restored:
                 headers, sequences = restored
@@ -999,19 +1231,19 @@ def run_editor(filepath):
                 status_msg = "Nothing to redo."
             status_expiry = time.time() + 2.0
             
-        elif key == 'EDIT_NAME' or (is_cmd_mode and key == 'E'):
+        elif key == 'EDIT_NAME' or (is_cmd_mode and key in ('E', 'e')):
             # Edit name
             prompt_mode = 'edit_name'
             prompt_text = "Enter accession name: "
             prompt_input = headers[cursor_row]
             
-        elif key == 'ADD_ROW' or (is_cmd_mode and key == 'A'):
+        elif key == 'ADD_ROW' or (is_cmd_mode and key in ('A', 'a')):
             # Add new row
             prompt_mode = 'add_seq'
             prompt_text = "New sequence name (default Seq_N): "
             prompt_input = ""
             
-        elif key == 'DELETE_ROW' or (is_cmd_mode and key == 'X'):
+        elif key == 'DELETE_ROW' or (is_cmd_mode and key in ('X', 'x')):
             # Delete current row
             if num_seqs <= 1:
                 status_msg = "Cannot delete the last remaining sequence."
@@ -1021,13 +1253,13 @@ def run_editor(filepath):
                 prompt_text = f"Delete sequence row '{headers[cursor_row]}'? (y/N): "
                 prompt_input = ""
                 
-        elif key == 'SAVE' or (is_cmd_mode and key == 'S'):
+        elif key == 'SAVE' or (is_cmd_mode and key in ('S', 's')):
             # Save Alignment
             prompt_mode = 'save_file'
             prompt_text = "Save as (FASTA file path): "
             prompt_input = filename
             
-        elif key == 'EXPORT_FREQ' or (is_cmd_mode and key == 'G'):
+        elif key == 'EXPORT_FREQ' or (is_cmd_mode and key in ('G', 'g')):
             # Export frequencies
             prompt_mode = 'export_freq'
             prompt_text = "Export prefix: "
@@ -1037,16 +1269,31 @@ def run_editor(filepath):
                 base_name = "frequencies"
             prompt_input = base_name
             
-        elif key == 'DELETE' or (is_cmd_mode and key == 'D'):
-            # Delete character to the left of the cursor and shorten sequence
-            if cursor_col > 0:
-                history.push_state(headers, sequences)
-                current_seq = sequences[cursor_row]
-                sequences[cursor_row] = current_seq[:cursor_col-1] + current_seq[cursor_col:]
-                cursor_col -= 1
-                modified = True
-                status_msg = "Deleted base (sequence shortened)."
-                status_expiry = time.time() + 1.5
+        elif key == 'DELETE' or (is_cmd_mode and key in ('D', 'd')):
+            if active_pane == 'acc':
+                # Delete current sequence row immediately (with undo capability)
+                if num_seqs <= 1:
+                    status_msg = "Cannot delete the last remaining sequence."
+                    status_expiry = time.time() + 2.0
+                else:
+                    history.push_state(headers, sequences)
+                    deleted_name = headers.pop(cursor_row)
+                    sequences.pop(cursor_row)
+                    modified = True
+                    if cursor_row >= len(sequences):
+                        cursor_row = max(0, len(sequences) - 1)
+                    status_msg = f"Deleted sequence '{deleted_name}'. Press Ctrl+Z to undo."
+                    status_expiry = time.time() + 3.0
+            else:
+                # Delete character to the left of the cursor and shorten sequence
+                if cursor_col > 0:
+                    history.push_state(headers, sequences)
+                    current_seq = sequences[cursor_row]
+                    sequences[cursor_row] = current_seq[:cursor_col-1] + current_seq[cursor_col:]
+                    cursor_col -= 1
+                    modified = True
+                    status_msg = "Deleted base (sequence shortened)."
+                    status_expiry = time.time() + 1.5
                 
         elif key == ' ' or key == '-':
             # Insert or overwrite Gap at cursor
