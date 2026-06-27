@@ -211,6 +211,8 @@ def read_key():
                         "\x1b[1;5B": "CTRL_DOWN",
                         "\x1b[1;5C": "CTRL_RIGHT",
                         "\x1b[1;5D": "CTRL_LEFT",
+                        "\x1b[1;2A": "SHIFT_UP",
+                        "\x1b[1;2B": "SHIFT_DOWN",
                         "\x1bOA": "KEY_UP",
                         "\x1bOB": "KEY_DOWN",
                         "\x1bOC": "KEY_RIGHT",
@@ -672,18 +674,20 @@ def run_editor(filepath):
                 elif prompt_mode == 'export_freq':
                     prefix = prompt_input.strip() if prompt_input.strip() else "frequencies"
                     
-                    # Compute output filenames
-                    counts_all_path = prefix + "_counts_all.csv"
-                    counts_changed_path = prefix + "_counts_changed.csv"
-                    freq_all_path = prefix + "_frequencies_all.csv"
-                    freq_changed_path = prefix + "_frequencies_changed.csv"
+                    current_dir = os.path.abspath(os.getcwd())
+                    freqs_dir = os.path.join(current_dir, "freqs")
+                    
+                    # Compute output filenames inside 'freqs' subdirectory
+                    counts_all_path = os.path.join(freqs_dir, prefix + "_counts_all.csv")
+                    counts_changed_path = os.path.join(freqs_dir, prefix + "_counts_changed.csv")
+                    freq_all_path = os.path.join(freqs_dir, prefix + "_frequencies_all.csv")
+                    freq_changed_path = os.path.join(freqs_dir, prefix + "_frequencies_changed.csv")
                     
                     target_counts_all = os.path.abspath(counts_all_path)
                     target_counts_changed = os.path.abspath(counts_changed_path)
                     target_freq_all = os.path.abspath(freq_all_path)
                     target_freq_changed = os.path.abspath(freq_changed_path)
                     
-                    current_dir = os.path.abspath(os.getcwd())
                     paths = [target_counts_all, target_counts_changed, target_freq_all, target_freq_changed]
                     
                     if any(not p.startswith(current_dir) for p in paths):
@@ -691,6 +695,8 @@ def run_editor(filepath):
                         status_expiry = time.time() + 4.0
                     else:
                         try:
+                            # Ensure subdirectory exists
+                            os.makedirs(freqs_dir, exist_ok=True)
                             num_seqs = len(sequences)
                             seq_len = len(sequences[0]) if num_seqs > 0 else 0
                             
@@ -763,7 +769,7 @@ def run_editor(filepath):
                                 writer.writerow(csv_headers_changed)
                                 writer.writerows(freq_changed_rows)
                                 
-                            status_msg = f"Exported 4 frequency/count CSVs successfully."
+                            status_msg = f"Exported 4 CSVs to 'freqs/' subdirectory."
                             status_expiry = time.time() + 3.0
                         except Exception as e:
                             status_msg = f"Export failed: {str(e)}"
@@ -907,6 +913,26 @@ def run_editor(filepath):
         elif key == 'PAGE_RIGHT' or key == 'CTRL_RIGHT':
             # Page sequence right (columns)
             cursor_col = min(seq_len - 1, cursor_col + (seq_width - 5))
+            
+        elif key == 'SHIFT_UP':
+            if cursor_row > 0:
+                history.push_state(headers, sequences)
+                headers[cursor_row], headers[cursor_row - 1] = headers[cursor_row - 1], headers[cursor_row]
+                sequences[cursor_row], sequences[cursor_row - 1] = sequences[cursor_row - 1], sequences[cursor_row]
+                cursor_row -= 1
+                modified = True
+                status_msg = "Sequence moved up."
+                status_expiry = time.time() + 1.5
+                
+        elif key == 'SHIFT_DOWN':
+            if cursor_row < len(sequences) - 1:
+                history.push_state(headers, sequences)
+                headers[cursor_row], headers[cursor_row + 1] = headers[cursor_row + 1], headers[cursor_row]
+                sequences[cursor_row], sequences[cursor_row + 1] = sequences[cursor_row + 1], sequences[cursor_row]
+                cursor_row += 1
+                modified = True
+                status_msg = "Sequence moved down."
+                status_expiry = time.time() + 1.5
             
         elif key == '[':
             acc_width_delta -= 1
