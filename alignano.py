@@ -9,6 +9,46 @@ import copy
 class TerminalResizeException(Exception):
     pass
 
+def supports_256_colors():
+    """Detects if stdout supports 256 colors."""
+    if not sys.stdout.isatty():
+        return False
+    # Check COLORTERM first
+    colorterm = os.environ.get("COLORTERM", "").lower()
+    if colorterm in ("truecolor", "24bit"):
+        return True
+    # Check TERM
+    term = os.environ.get("TERM", "").lower()
+    if "256color" in term or "256" in term:
+        return True
+    # Check Windows Terminal/VS Code environments
+    if sys.platform == "win32":
+        if "WT_SESSION" in os.environ or "VSCODE_GIT_IPC_HANDLE" in os.environ:
+            return True
+    return False
+
+def get_theme_colors():
+    """Returns terminal color codes depending on 256-color support."""
+    has_256 = supports_256_colors()
+    if has_256:
+        return {
+            'accent': '\x1b[38;5;198m',
+            'gold': '\x1b[38;5;220m',
+            'dim': '\x1b[38;5;244m',
+            'bold': '\x1b[1m',
+            'reset': '\x1b[0m',
+            'select_bg': '\x1b[48;5;198m\x1b[38;5;231m',
+        }
+    else:
+        return {
+            'accent': '\x1b[35m',      # Magenta
+            'gold': '\x1b[33m',        # Yellow
+            'dim': '\x1b[2m',          # Dim / faint
+            'bold': '\x1b[1m',
+            'reset': '\x1b[0m',
+            'select_bg': '\x1b[7m',    # Inverted text
+        }
+
 # ==============================================================================
 # TERMINAL ESCAPE CODES & WINDOWS COMPATIBILITY
 # ==============================================================================
@@ -135,9 +175,9 @@ def read_key():
             "\x16": "CYCLE_COLORS",  # Ctrl+V
             "\x18": "DELETE_ROW",    # Ctrl+X
             "\x19": "REDO",          # Ctrl+Y
-            "\x1a": "UNDO",          # Ctrl+Z
-            "\x7f": "BACKSPACE",
-            "\x08": "BACKSPACE",
+            "\x1a": "UNDO",
+            "\x7f": "DELETE",
+            "\x08": "DELETE",
             "\r": "ENTER",
             "\n": "ENTER",
             "\t": "TAB",
@@ -191,9 +231,9 @@ def read_key():
                 "\x16": "CYCLE_COLORS",  # Ctrl+V
                 "\x18": "DELETE_ROW",    # Ctrl+X
                 "\x19": "REDO",          # Ctrl+Y
-                "\x1a": "UNDO",          # Ctrl+Z
-                "\x7f": "BACKSPACE",
-                "\x08": "BACKSPACE",
+                "\x1a": "UNDO",
+                "\x7f": "DELETE",
+                "\x08": "DELETE",
                 "\r": "ENTER",
                 "\n": "ENTER",
                 "\t": "TAB",
@@ -314,11 +354,13 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
 
     num_seqs = len(sequences)
     seq_len = len(sequences[0]) if num_seqs > 0 else 0
+    has_256 = supports_256_colors()
+    colors_theme = get_theme_colors()
     
     lines = []
     
-    # 1. Header top border
-    lines.append("╔" + "═" * (cols - 2) + "╗")
+    # 1. Header top border (ASCII)
+    lines.append("+" + "-" * (cols - 2) + "+")
     
     # 2. Header Status Line
     filename_display = os.path.basename(filename) if filename else "[New Alignment]"
@@ -326,18 +368,18 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
     mode_marker = "INS" if insert_mode else "OVR"
     vis_name = "DNA/RNA" if vis_mode == 'nuc' else ("Protein" if vis_mode == 'aa' else "Monochrome")
     
-    header_left = f" ▓ textFASTAmsa v1.0.10 ▓ File: {filename_display}{mod_marker} ░ Mode: {mode_marker} ░ Colors: {vis_name}"
+    header_left = f" # AligNano v1.0.10 # File: {filename_display}{mod_marker} | Mode: {mode_marker} | Colors: {vis_name}"
     header_right = f"Seq: {cursor_row+1}/{num_seqs} Col: {cursor_col+1}/{seq_len} "
     
     space_left = cols - 2 - len(header_left) - len(header_right)
     if space_left < 0:
         header_text = (header_left + " " + header_right)[:cols-2]
-        lines.append("║" + header_text + " " * (cols - 2 - len(header_text)) + "║")
+        lines.append("|" + header_text + " " * (cols - 2 - len(header_text)) + "|")
     else:
-        lines.append("║" + header_left + " " * space_left + header_right + "║")
+        lines.append("|" + header_left + " " * space_left + header_right + "|")
         
-    # 3. Header separator
-    lines.append("╠" + "═" * acc_width + "╦" + "═" * (cols - acc_width - 3) + "╣")
+    # 3. Header separator (ASCII)
+    lines.append("+" + "-" * acc_width + "+" + "-" * (cols - acc_width - 3) + "+")
     
     # 3.1. Coordinates Ruler Lines
     nums_list = [" "] * seq_width
@@ -350,18 +392,18 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
                 idx = col_i + char_pos
                 if idx < seq_width:
                     nums_list[idx] = char_val
-            ticks_list[col_i] = "┬"
+            ticks_list[col_i] = "|"
         elif col_val % 5 == 0:
-            ticks_list[col_i] = "┼"
+            ticks_list[col_i] = "+"
         else:
-            ticks_list[col_i] = "░"
+            ticks_list[col_i] = "."
             
-    ruler_nums_str = "\x1b[38;5;246m" + "".join(nums_list) + "\x1b[0m"
-    ruler_ticks_str = "\x1b[38;5;240m" + "".join(ticks_list) + "\x1b[0m"
+    ruler_nums_str = colors_theme['dim'] + "".join(nums_list) + colors_theme['reset']
+    ruler_ticks_str = colors_theme['dim'] + "".join(ticks_list) + colors_theme['reset']
     
     acc_blank = " " * acc_width
-    lines.append(f"║{acc_blank}│{ruler_nums_str}║")
-    lines.append(f"║{acc_blank}┼{ruler_ticks_str}║")
+    lines.append(f"|{acc_blank}|{ruler_nums_str}|")
+    lines.append(f"|{acc_blank}+{ruler_ticks_str}|")
     
     # 4. Body Viewport
     for i in range(view_height):
@@ -380,14 +422,17 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
                     acc_part = f"\x1b[7m\x1b[1m{disp_name}\x1b[0m"
                 else:
                     # Secondary highlight for cursor row alignment
-                    acc_part = f"\x1b[48;5;238m\x1b[38;5;231m{disp_name}\x1b[0m"
+                    if has_256:
+                        acc_part = f"\x1b[48;5;238m\x1b[38;5;231m{disp_name}\x1b[0m"
+                    else:
+                        acc_part = f"\x1b[2m{disp_name}\x1b[0m"
             else:
                 acc_part = disp_name
         else:
             acc_part = " " * acc_width
             
-        # Divider Line
-        divider = "║" if seq_idx == cursor_row else "│"
+        # Divider Line (ASCII)
+        divider = "|"
         
         # Sequence Subpane
         seq_part = ""
@@ -409,13 +454,19 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
                     
                     if is_cursor:
                         if active_pane == 'seq' and not prompt_mode:
-                            # Highlight cursor block (Hot Pink / Magenta)
-                            seq_part += f"\x1b[48;5;198m\x1b[38;5;231m\x1b[1m{c}\x1b[0m"
+                            # Highlight cursor block
+                            if has_256:
+                                seq_part += f"\x1b[48;5;198m\x1b[38;5;231m\x1b[1m{c}\x1b[0m"
+                            else:
+                                seq_part += f"\x1b[7m\x1b[1m{c}\x1b[0m"
                         else:
                             # Secondary highlight for column alignment
-                            seq_part += f"\x1b[48;5;238m\x1b[38;5;231m{c}\x1b[0m"
+                            if has_256:
+                                seq_part += f"\x1b[48;5;238m\x1b[38;5;231m{c}\x1b[0m"
+                            else:
+                                seq_part += f"\x1b[4m{c}\x1b[0m"
                     else:
-                        if color:
+                        if color and has_256 and vis_mode != 'mono':
                             seq_part += f"{color}{c}\x1b[0m"
                         else:
                             seq_part += c
@@ -424,36 +475,36 @@ def draw_screen(headers, sequences, cursor_row, cursor_col, row_offset, col_offs
         else:
             seq_part = " " * seq_width
             
-        lines.append(f"║{acc_part}{divider}{seq_part}║")
+        lines.append(f"|{acc_part}{divider}{seq_part}|")
         
-    # 5. Footer separator
-    lines.append("╠" + "═" * acc_width + "╩" + "═" * (cols - acc_width - 3) + "╣")
+    # 5. Footer separator (ASCII)
+    lines.append("+" + "-" * acc_width + "+" + "-" * (cols - acc_width - 3) + "+")
     
     # 6. Status / Help / Prompt Line
     if prompt_mode:
-        raw_prompt = f" ▒ {prompt_text}{prompt_input}"
+        raw_prompt = f" * {prompt_text}{prompt_input}"
         space_left = cols - 2 - len(raw_prompt) - 1 # 1 for cursor char
-        lines.append("║" + raw_prompt + "█" + " " * max(0, space_left) + "║")
+        lines.append("|" + raw_prompt + "_" + " " * max(0, space_left) + "|")
     elif status_msg:
         # Show flashing warning or successful saving notification
         space_left = cols - 2 - len(status_msg)
-        lines.append("║" + status_msg + " " * max(0, space_left) + "║")
+        lines.append("|" + status_msg + " " * max(0, space_left) + "|")
     else:
         # Static instructions line
-        help_text = " [Arrows] Move  [Tab] Swap  [Space/-] Gap  [Ctrl+O] Mode  [Ctrl+F] Find"
+        help_text = " [Arrows] Move  [Tab] Swap  [Space/-] Gap  [Delete] Delete  [Ctrl+O] Mode"
         space_left = cols - 2 - len(help_text)
-        lines.append("║" + help_text + " " * max(0, space_left) + "║")
+        lines.append("|" + help_text + " " * max(0, space_left) + "|")
         
     # 7. Navigation shortcut help line
     if not prompt_mode:
-        nav_text = " [Ctrl+E] Name  [Ctrl+V] Color  [Ctrl+N] Next  [Ctrl+S] Save  [Ctrl+Q] Quit"
+        nav_text = " [Ctrl+E] Name  [Ctrl+V] Color  [Ctrl+F] Find  [Ctrl+S] Save  [Ctrl+Q] Quit"
     else:
         nav_text = " [Enter] Confirm  [Escape] Cancel / Exit Prompt"
     space_left = cols - 2 - len(nav_text)
-    lines.append("║" + nav_text + " " * max(0, space_left) + "║")
+    lines.append("|" + nav_text + " " * max(0, space_left) + "|")
     
-    # 8. Footer bottom border
-    lines.append("╚" + "═" * (cols - 2) + "╝")
+    # 8. Footer bottom border (ASCII)
+    lines.append("+" + "-" * (cols - 2) + "+")
     
     # Write full viewport starting at terminal home (0,0) without trailing newline to avoid scrolling
     sys.stdout.write("\x1b[H" + "\n".join(lines))
@@ -480,7 +531,10 @@ def run_editor(filepath):
     
     active_pane = 'seq' # 'acc' or 'seq'
     insert_mode = False # False = Overwrite, True = Insert
-    vis_mode = detect_vis_mode(sequences)
+    if not supports_256_colors():
+        vis_mode = 'mono'
+    else:
+        vis_mode = detect_vis_mode(sequences)
     modified = False
     
     history = StateHistory()
@@ -572,12 +626,12 @@ def run_editor(filepath):
                 elif prompt_mode == 'save_file':
                     dest_file = prompt_input.strip()
                     if dest_file:
-                        # Restrict reads/writes within the sandbox textFASTAmsa (or child directories)
+                        # Restrict reads/writes within the sandbox AligNano (or child directories)
                         # Normalize path
                         full_path = os.path.abspath(dest_file)
                         current_dir = os.path.abspath(os.getcwd())
                         if not full_path.startswith(current_dir):
-                            status_msg = "Error: Access denied (sandbox policy: textFASTAmsa folder only)."
+                            status_msg = "Error: Access denied (sandbox policy: AligNano folder only)."
                             status_expiry = time.time() + 4.0
                         else:
                             try:
@@ -659,7 +713,7 @@ def run_editor(filepath):
                         status_expiry = time.time() + 3.0
                     prompt_mode = None
                     prompt_input = ""
-            elif key == 'BACKSPACE':
+            elif key == 'DELETE':
                 prompt_input = prompt_input[:-1]
             elif isinstance(key, str) and len(key) == 1:
                 prompt_input += key
@@ -740,13 +794,17 @@ def run_editor(filepath):
             
         elif key == 'CYCLE_COLORS' or (is_cmd_mode and key == 'V'):
             # Toggle visualization mode
-            if vis_mode == 'nuc':
-                vis_mode = 'aa'
-            elif vis_mode == 'aa':
+            if not supports_256_colors():
                 vis_mode = 'mono'
+                status_msg = "Visual Mode: MONOCHROME (256-color not supported)"
             else:
-                vis_mode = 'nuc'
-            status_msg = f"Visual Mode: {vis_mode.upper()}"
+                if vis_mode == 'nuc':
+                    vis_mode = 'aa'
+                elif vis_mode == 'aa':
+                    vis_mode = 'mono'
+                else:
+                    vis_mode = 'nuc'
+                status_msg = f"Visual Mode: {vis_mode.upper()}"
             status_expiry = time.time() + 2.0
             
         elif key == 'UNDO' or (is_cmd_mode and key == 'U'):
@@ -798,27 +856,15 @@ def run_editor(filepath):
             prompt_input = filename
             
         elif key == 'DELETE' or (is_cmd_mode and key == 'D'):
-            # Delete character/column at cursor position (Only in sequence pane)
-            if active_pane == 'seq' and seq_len > 0:
-                history.push_state(headers, sequences)
-                # Remove char from all sequences to maintain alignment block, OR only current sequence?
-                # Usually alignment editors delete the base in all sequences to preserve alignment,
-                # or just current sequence. Let's make it delete current sequence base and fill the end with a gap
-                # to maintain equal length grid.
-                current_seq = sequences[cursor_row]
-                sequences[cursor_row] = current_seq[:cursor_col] + current_seq[cursor_col+1:] + "-"
-                modified = True
-                status_msg = "Deleted base in current sequence (shifted left)."
-                status_expiry = time.time() + 1.5
-                
-        elif key == 'BACKSPACE':
-            # Delete character to the left of the cursor
-            if active_pane == 'seq' and cursor_col > 0:
+            # Delete character to the left of the cursor and shorten sequence
+            if cursor_col > 0:
                 history.push_state(headers, sequences)
                 current_seq = sequences[cursor_row]
-                sequences[cursor_row] = current_seq[:cursor_col-1] + current_seq[cursor_col:] + "-"
+                sequences[cursor_row] = current_seq[:cursor_col-1] + current_seq[cursor_col:]
                 cursor_col -= 1
                 modified = True
+                status_msg = "Deleted base (sequence shortened)."
+                status_expiry = time.time() + 1.5
                 
         elif key == ' ' or key == '-':
             # Insert Gap at cursor
@@ -874,44 +920,44 @@ def display_retro_intro(files, selected_idx):
     cols, rows = shutil.get_terminal_size((80, 24))
     lines = []
     
-    # Retro Title Banner
+    # Retro Title Banner (Plain ASCII art using slash/backslash for absolute font safety)
     banner = [
-        " ▄▄▄█████▓ ▓█████ ▒██   ██▒ ▄▄▄█████▓ ▓█████ ▄▄▄       ██████  ▄▄▄      ",
-        " ▓  ██▒ ▓▒ ▓█   ▀ ▒██   ██▒ ▓  ██▒ ▓▒ ▓█   ▀▒████▄    ▒██    ▒▒████▄    ",
-        " ▒ ▓██░ ▒░ ▒███    ▒██ ░██░ ▒ ▓██░ ▒░ ▒███  ░██▄▄▄▄   ░ ▓██▄  ░██▄▄▄▄   ",
-        " ░ ▓██▓ ░  ▒▓█  ▄  ░ ▓██▓ ░ ░ ▓██▓ ░  ▒▓█  ▄ ▓█   ▓██   ▒   ██▒▓█   ▓██ ",
-        "   ▒██▒ ░  ░▒████▒   ▒██▒ ░   ▒██▒ ░  ░▒████▒▒██████░ ▒██████▒▒▒██████░ ",
-        "   ▒ ░░    ░░ ▒░ ░   ▒ ░░     ▒ ░░    ░░ ▒░ ░ ░▒ ▓  █ ░ ▒▓▒ ▒ ░░ ▒ ▓  █ ",
-        "     ░      ░ ░  ░   ░ ░        ░      ░ ░  ░  ░ ▒  ▒ ░ ░▒  ░ ░  ░ ▒  ▒ ",
-        "   ░          ░      ░ ░      ░          ░     ░ ░  ░ ░  ░  ░    ░ ░  ░ ",
-        "              ░  ░                        ░  ░       ░             ░  ░ "
+        "    ___    _  _          _   _                        ",
+        "   /   |  | |(_)        | \\ | |                       ",
+        "  / /| |  | | _   __ _  |  \\| |  __ _  _ __    ___    ",
+        " / ___ |  | || | / _` | | . ` | / _` || '_ \\  / _ \\   ",
+        "/_/  |_|  |_||_|| (_| | |_|\\__|\\__,_||_| |_|\\___/    ",
+        "                 \\__, |                               ",
+        "                 |___/                                "
     ]
     
+    colors = get_theme_colors()
+    
     lines.append("\x1b[H\x1b[2J") # Clear and home
-    lines.append("\x1b[38;5;198m" + "=" * cols + "\x1b[0m")
+    lines.append(colors['accent'] + "=" * cols + colors['reset'])
     
     # Render banner centered
     for bline in banner:
         pad = max(0, (cols - len(bline)) // 2)
-        lines.append("\x1b[38;5;220m" + " " * pad + bline + "\x1b[0m")
+        lines.append(colors['gold'] + " " * pad + bline + colors['reset'])
         
-    lines.append("\x1b[38;5;198m" + "=" * cols + "\x1b[0m")
-    lines.append("\x1b[1m  Multiple Sequence Alignment Editor & Browser  v1.0.10\x1b[0m")
+    lines.append(colors['accent'] + "=" * cols + colors['reset'])
+    lines.append(colors['bold'] + "  Multiple Sequence Alignment Editor & Browser  v1.0.10" + colors['reset'])
     lines.append("  Inspired by ANSI BBSs (80s), tmux, and Antigravity CLI\n")
     
-    lines.append("  \x1b[1mSelect a FASTA file from the current workspace or create a new alignment:\x1b[0m\n")
+    lines.append("  " + colors['bold'] + "Select a FASTA file from the current workspace or create a new alignment:" + colors['reset'] + "\n")
     
     # Render file selector list
     for idx, f in enumerate(files):
         if idx == selected_idx:
             # Highlight selected item
-            lines.append(f"   \x1b[48;5;198m\x1b[38;5;231m ▓ {f} \x1b[0m")
+            lines.append(f"   {colors['select_bg']} * {f} {colors['reset']}")
         else:
-            lines.append(f"     ░ {f}")
+            lines.append(f"     - {f}")
             
     lines.append("")
-    lines.append("\x1b[38;5;244m  [Arrows] Move selection   [Enter] Open Selection   [Q] Quit\x1b[0m")
-    lines.append("\x1b[38;5;198m" + "=" * cols + "\x1b[0m")
+    lines.append(colors['dim'] + "  [Arrows] Move selection   [Enter] Open Selection   [Q] Quit" + colors['reset'])
+    lines.append(colors['accent'] + "=" * cols + colors['reset'])
     
     sys.stdout.write("\n".join(lines))
     sys.stdout.flush()
@@ -923,7 +969,7 @@ def main():
         return
         
     # Interactive menu for workspace directories
-    # Only look inside workspace (current directory textFASTAmsa)
+    # Only look inside workspace (current directory AligNano)
     workspace_files = []
     # Create lists of files matching standard extensions
     valid_exts = ('.fasta', '.fa', '.msa', '.seq')
@@ -975,7 +1021,7 @@ def main():
                     full_path = os.path.abspath(new_filename)
                     current_dir = os.path.abspath(os.getcwd())
                     if not full_path.startswith(current_dir):
-                        print("Access denied (sandbox policy: textFASTAmsa folder only).")
+                        print("Access denied (sandbox policy: AligNano folder only).")
                         time.sleep(2)
                         continue
                         
