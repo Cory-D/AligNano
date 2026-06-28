@@ -73,6 +73,6 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 
 ## Sample Alignments Included
 
-We have provided two curated, biologically authentic, codon-aligned eukaryotic ubiquitin alignments:
-1. `ubiquitin_dna.fasta` - Codon-aligned mature ubiquitin DNA coding sequences (228 bp) from 20 diverse eukaryotic species.
-2. `ubiquitin_protein.fasta` - Aligned mature ubiquitin protein sequences (76 AA) from the same 20 eukaryotic species.
+We have provided four curated, biologically authentic eukaryotic ubiquitin alignments:
+1. `ubiquitin_dna.fasta` / `ubiquitin_dna.a3m` - Codon-aligned mature ubiquitin DNA coding sequences (228 bp) from 20 diverse eukaryotic species in FASTA and A3M formats.
+2. `ubiquitin_protein.fasta` / `ubiquitin_protein.a3m` - Aligned mature ubiquitin protein sequences (76 AA) from the same 20 eukaryotic species in FASTA and A3M formats.
