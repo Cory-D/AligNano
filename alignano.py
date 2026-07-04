@@ -1439,7 +1439,7 @@ def run_editor(filepath):
             prompt_text = "Enter accession name: "
             prompt_input = headers[cursor_row]
 
-        elif key == "ADD_ROW" or (is_cmd_mode and key in ("A", "a")):
+        elif key == "ADD_ROW" or (is_cmd_mode and key in ("A", "a", "N", "n")):
             # Add new row
             prompt_mode = "add_seq"
             prompt_text = "New sequence name (default Seq_N): "
@@ -1694,14 +1694,19 @@ def display_file_selector(files, selected_idx):
 
 
 def run_file_selector():
-    """Interactive menu to select a FASTA/A3M file from the current directory."""
+    """Interactive menu to select a FASTA/A3M file from the current directory and subdirectories."""
     # List files case-insensitively matching standard extensions
     valid_exts = (".fasta", ".fa", ".msa", ".seq", ".a3m")
     files = []
-    for f in sorted(os.listdir(".")):
-        if os.path.isfile(f) and f.lower().endswith(valid_exts):
-            files.append(f)
+    for root, dirs, filenames in os.walk("."):
+        # Prune hidden directories (e.g. .git) and __pycache__
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
+        for f in filenames:
+            if f.lower().endswith(valid_exts):
+                rel_path = os.path.relpath(os.path.join(root, f), ".")
+                files.append(rel_path)
 
+    files = sorted(files)
     files.append("[ Go Back ]")
     selected_idx = 0
 
