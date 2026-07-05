@@ -1341,10 +1341,10 @@ def run_editor(filepath):
         elif key == "PAGE_DOWN":
             # Page down sequences/accessions (rows)
             cursor_row = min(num_seqs - 1, cursor_row + (view_height - 2))
-        elif key == "PAGE_LEFT" or key == "CTRL_LEFT":
+        elif key == "PAGE_LEFT":
             # Page sequence left (columns)
             cursor_col = max(0, cursor_col - (seq_width - 5))
-        elif key == "PAGE_RIGHT" or key == "CTRL_RIGHT":
+        elif key == "PAGE_RIGHT":
             # Page sequence right (columns)
             cursor_col = min(seq_len - 1, cursor_col + (seq_width - 5))
 
@@ -1582,6 +1582,16 @@ def display_help_screen():
     scroll_offset = 0
     while True:
         cols, rows = shutil.get_terminal_size((80, 24))
+        if rows < 10 or cols < 40:
+            sys.stdout.write("\x1b[H\x1b[2JTerminal too small! Please resize.\n")
+            sys.stdout.flush()
+            try:
+                key = read_key()
+                if key in ("ESCAPE", "ENTER", "QUIT", "HELP", "Ctrl+H", "?") or (key in ("h", "H")):
+                    break
+            except Exception:
+                break
+            continue
         colors = get_theme_colors()
         
         # Build all content lines
@@ -1593,8 +1603,8 @@ def display_help_screen():
                 ("Arrows (Up/Down)", "Move cursor cell-by-cell vertically"),
                 ("Arrows (Left/Right)", "Move cursor cell-by-cell horizontally (crosses panes)"),
                 ("Tab", "Switch pane focus between Accession Names & Sequence Grid"),
-                ("Ctrl+Left / Ctrl+L", "Page sequence view left (scrolls by screen width - 5)"),
-                ("Ctrl+Right / Ctrl+R", "Page sequence view right (scrolls by screen width - 5)"),
+                ("Ctrl+L", "Page sequence view left (scrolls by screen width - 5)"),
+                ("Ctrl+R", "Page sequence view right (scrolls by screen width - 5)"),
                 ("Page Up / Ctrl+U", "Page up sequences vertically"),
                 ("Page Down / Ctrl+D", "Page down sequences vertically"),
                 ("[ / ]", "Decrease / Increase the Accession name column width"),
@@ -1627,7 +1637,7 @@ def display_help_screen():
         shortcut_w = 26
         for sec_title, items in help_data:
             content_lines.append("")
-            content_lines.append(f"{colors['bold']}{colors['green']}=== {sec_title} ==={colors['reset']}")
+            content_lines.append(f"{colors['bold']}{colors['accent']}=== {sec_title} ==={colors['reset']}")
             for shortcut, desc in items:
                 sh_str = f"  {shortcut}".ljust(shortcut_w)
                 content_lines.append(f"{colors['gold']}{sh_str}{colors['reset']} {desc}")
@@ -1770,6 +1780,10 @@ def display_retro_intro(choices, selected_idx):
 def display_file_selector(files, selected_idx, scroll_offset, view_height):
     """Draws file selection screen with scrollable viewport."""
     cols, rows = shutil.get_terminal_size((80, 24))
+    if rows < 18 or cols < 40:
+        sys.stdout.write("\x1b[H\x1b[2JTerminal too small! Please resize.\n")
+        sys.stdout.flush()
+        return
     lines = []
 
     # Modern Block-style ASCII art for "AligNano"
