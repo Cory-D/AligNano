@@ -256,7 +256,7 @@ def read_key():
                 "\x19": "REDO",  # Ctrl+Y
                 "\x1a": "UNDO",
                 "\x7f": "DELETE",
-                "\x08": "DELETE",
+                "\x08": "HELP",
                 "\x07": "EXPORT_FREQ",
                 "\r": "ENTER",
                 "\n": "FIND_NEXT",  # Ctrl+J
@@ -825,7 +825,7 @@ def draw_screen(
         nav_text = " [Ctrl+T] Exit Move Mode"
     elif not prompt_mode:
         nav_text = (
-            " [Ctrl+E] Name  [Ctrl+F] Find  [Ctrl+G] Freq  [Ctrl+S] Save  [Ctrl+Q] Quit"
+            " [Ctrl+H] Help  [Ctrl+E] Name  [Ctrl+F] Find  [Ctrl+G] Freq  [Ctrl+S] Save  [Ctrl+Q] Quit"
         )
     else:
         nav_text = " [Enter] Confirm  [Escape] Cancel / Exit Prompt"
@@ -1273,7 +1273,7 @@ def run_editor(filepath):
                         status_expiry = time.time() + 3.0
                     prompt_mode = None
                     prompt_input = ""
-            elif key == "DELETE":
+            elif key in ("DELETE", "HELP"):
                 prompt_input = prompt_input[:-1]
             elif isinstance(key, str) and len(key) == 1:
                 prompt_input += key
@@ -1282,7 +1282,13 @@ def run_editor(filepath):
         # Normal command controls
         is_cmd_mode = active_pane == "acc"
 
-        if key == "QUIT" or (is_cmd_mode and key in ("Q", "q")):
+        if key == "HELP" or key == "?" or (is_cmd_mode and key in ("H", "h")):
+            display_help_screen()
+            sys.stdout.write("\x1b[2J")
+            sys.stdout.flush()
+            continue
+
+        elif key == "QUIT" or (is_cmd_mode and key in ("Q", "q")):
             if modified:
                 prompt_mode = "quit_confirm"
                 prompt_text = "Unsaved changes! Quit anyway? (y/N): "
@@ -1570,6 +1576,139 @@ def run_editor(filepath):
     print("Alignment Editor exited cleanly.")
 
 
+def display_help_screen():
+    """Draws a beautiful fullscreen scrollable interactive help window."""
+    # We loop until user exits
+    scroll_offset = 0
+    while True:
+        cols, rows = shutil.get_terminal_size((80, 24))
+        colors = get_theme_colors()
+        
+        # Build all content lines
+        content_lines = []
+        
+        # Section titles and keys
+        help_data = [
+            ("NAVIGATION & SCROLLING", [
+                ("Arrows (Up/Down)", "Move cursor cell-by-cell vertically"),
+                ("Arrows (Left/Right)", "Move cursor cell-by-cell horizontally (crosses panes)"),
+                ("Tab", "Switch pane focus between Accession Names & Sequence Grid"),
+                ("Ctrl+Left / Ctrl+L", "Page sequence view left (scrolls by screen width - 5)"),
+                ("Ctrl+Right / Ctrl+R", "Page sequence view right (scrolls by screen width - 5)"),
+                ("Page Up / Ctrl+U", "Page up sequences vertically"),
+                ("Page Down / Ctrl+D", "Page down sequences vertically"),
+                ("[ / ]", "Decrease / Increase the Accession name column width"),
+            ]),
+            ("GRID & SEQUENCE EDITING", [
+                ("Insert", "Toggle Edit Mode: INSERT (insert base/gap) vs OVERWRITE"),
+                ("A-Z, a-z, 0-9", "Insert or overwrite character (advances cursor right)"),
+                ("Space / -", "Insert or overwrite gap character '-' at cursor"),
+                ("Backspace / Delete", "Sequence grid: Delete base left of cursor (sequence shortens)"),
+                ("Ctrl+K / Ctrl+X", "Accession pane: Delete current sequence row (immediate)"),
+                ("Ctrl+A / Ctrl+N", "Accession pane: Add a new sequence row"),
+                ("Ctrl+E", "Accession pane: Rename current sequence row"),
+                ("Ctrl+Z", "Undo last editing action (history state restored)"),
+                ("Ctrl+Y", "Redo last undone action"),
+            ]),
+            ("EDITOR COMMANDS", [
+                ("Ctrl+F", "Search motif or accession name"),
+                ("Ctrl+T", "Toggle Move Mode (use Up/Down arrows to reorder sequence)"),
+                ("Ctrl+W", "Sort all sequences by Levenshtein distance to top sequence"),
+                ("Ctrl+V", "Cycle color scheme (DNA/RNA -> Protein -> Diff -> Mono)"),
+                ("Ctrl+P", "Toggle alignment format between FASTA and A3M"),
+                ("Ctrl+G", "Export column consensus frequencies to a text file"),
+                ("Ctrl+S", "Save current alignment to FASTA/A3M file"),
+                ("Ctrl+Q", "Quit alignment editor (checks for unsaved changes)"),
+                ("Ctrl+H / ?", "Toggle this interactive Help viewer"),
+            ])
+        ]
+        
+        # Format the help items
+        shortcut_w = 26
+        for sec_title, items in help_data:
+            content_lines.append("")
+            content_lines.append(f"{colors['bold']}{colors['green']}=== {sec_title} ==={colors['reset']}")
+            for shortcut, desc in items:
+                sh_str = f"  {shortcut}".ljust(shortcut_w)
+                content_lines.append(f"{colors['gold']}{sh_str}{colors['reset']} {desc}")
+                
+        content_lines.append("")
+        
+        # Calculate viewport
+        # Header takes 4 lines, Footer takes 4 lines.
+        header_height = 4
+        footer_height = 4
+        view_h = rows - header_height - footer_height
+        if view_h < 1:
+            view_h = 1
+            
+        # Constrain scroll offset
+        max_offset = max(0, len(content_lines) - view_h)
+        if scroll_offset > max_offset:
+            scroll_offset = max_offset
+        if scroll_offset < 0:
+            scroll_offset = 0
+            
+        # Render frame
+        lines = []
+        lines.append("\x1b[H\x1b[2J")  # Clear and home
+        lines.append(colors["blue"] + "=" * cols + colors["reset"])
+        
+        title_text = " ALIGNANO INTERACTIVE HELP "
+        pad_t = max(0, (cols - len(title_text)) // 2)
+        lines.append(" " * pad_t + colors["bold"] + colors["gold"] + title_text + colors["reset"])
+        lines.append(colors["blue"] + "=" * cols + colors["reset"])
+        
+        # Add viewport lines
+        for i in range(view_h):
+            idx = scroll_offset + i
+            if idx < len(content_lines):
+                line = content_lines[idx]
+                lines.append(line)
+            else:
+                lines.append("")
+                
+        # Pad empty viewport lines if needed
+        for _ in range(view_h - len(lines) + header_height):
+            lines.append("")
+            
+        # Footer
+        lines.append(colors["blue"] + "=" * cols + colors["reset"])
+        scroll_indicator = f" Line {scroll_offset+1}/{len(content_lines)} "
+        if len(content_lines) > view_h:
+            scroll_indicator += f" [Use Up/Down/PgUp/PgDn to scroll]"
+        footer_text = f" Press [ESC], [ENTER], [Ctrl+H], or [?] to return "
+        
+        # Draw footer lines centered
+        pad_f = max(0, (cols - len(footer_text)) // 2)
+        lines.append(" " * pad_f + colors["bold"] + footer_text + colors["reset"])
+        
+        pad_s = max(0, (cols - len(scroll_indicator)) // 2)
+        lines.append(" " * pad_s + colors["dim"] + scroll_indicator + colors["reset"])
+        lines.append(colors["blue"] + "=" * cols + colors["reset"])
+        
+        sys.stdout.write("\n".join(lines))
+        sys.stdout.flush()
+        
+        # Wait for key
+        try:
+            key = read_key()
+        except TerminalResizeException:
+            # Re-loop to handle resize
+            continue
+            
+        if key in ("ESCAPE", "ENTER", "QUIT", "HELP", "Ctrl+H", "?") or (key in ("h", "H")):
+            break
+        elif key == "KEY_UP":
+            scroll_offset = max(0, scroll_offset - 1)
+        elif key == "KEY_DOWN":
+            scroll_offset = min(max_offset, scroll_offset + 1)
+        elif key == "PAGE_UP":
+            scroll_offset = max(0, scroll_offset - view_h)
+        elif key == "PAGE_DOWN":
+            scroll_offset = min(max_offset, scroll_offset + view_h)
+
+
 # ==============================================================================
 # MAIN ENTRY & FILES SELECTOR
 # ==============================================================================
@@ -1628,8 +1767,8 @@ def display_retro_intro(choices, selected_idx):
     sys.stdout.flush()
 
 
-def display_file_selector(files, selected_idx):
-    """Draws file selection screen."""
+def display_file_selector(files, selected_idx, scroll_offset, view_height):
+    """Draws file selection screen with scrollable viewport."""
     cols, rows = shutil.get_terminal_size((80, 24))
     lines = []
 
@@ -1669,17 +1808,37 @@ def display_file_selector(files, selected_idx):
         + "\n"
     )
 
-    # Render files list
+    # Render files list using viewport windowing
     if len(files) == 1 and files[0] == "[ Go Back ]":
         lines.append("     (No .fasta or .a3m files found in current directory)")
         lines.append("")
-
-    for idx, f in enumerate(files):
-        if idx == selected_idx:
-            # Highlight selected item
-            lines.append(f"   {colors['select_bg']} * {f} {colors['reset']}")
+    else:
+        # Determine slice of files to render
+        visible_files = files[scroll_offset : scroll_offset + view_height]
+        
+        # Show scrolling indicators if there are more files
+        if scroll_offset > 0:
+            lines.append(colors["dim"] + "     ▲  [More files above]  ▲" + colors["reset"])
         else:
-            lines.append(f"     - {f}")
+            lines.append("")
+            
+        for i, f in enumerate(visible_files):
+            actual_idx = scroll_offset + i
+            if actual_idx == selected_idx:
+                # Highlight selected item
+                lines.append(f"   {colors['select_bg']} * {f} {colors['reset']}")
+            else:
+                lines.append(f"     - {f}")
+                
+        # Fill rest of visible list with empty lines if needed
+        # (This keeps the height of the screen consistent)
+        for _ in range(view_height - len(visible_files)):
+            lines.append("")
+
+        if scroll_offset + view_height < len(files):
+            lines.append(colors["dim"] + f"     ▼  [More files below ({len(files) - (scroll_offset + view_height)} more)]  ▼" + colors["reset"])
+        else:
+            lines.append("")
 
     lines.append("")
     lines.append(
@@ -1709,9 +1868,26 @@ def run_file_selector():
     files = sorted(files)
     files.append("[ Go Back ]")
     selected_idx = 0
+    scroll_offset = 0
 
     while True:
-        display_file_selector(files, selected_idx)
+        cols, rows = shutil.get_terminal_size((80, 24))
+        # 18 lines of overhead (banner, scroll indicators, margins)
+        view_height = max(3, rows - 18)
+        
+        # Constrain selected_idx
+        if selected_idx < 0:
+            selected_idx = 0
+        if selected_idx >= len(files):
+            selected_idx = len(files) - 1
+
+        # Adjust scroll offset
+        if selected_idx < scroll_offset:
+            scroll_offset = selected_idx
+        elif selected_idx >= scroll_offset + view_height:
+            scroll_offset = selected_idx - view_height + 1
+
+        display_file_selector(files, selected_idx, scroll_offset, view_height)
         try:
             key = read_key()
         except TerminalResizeException:

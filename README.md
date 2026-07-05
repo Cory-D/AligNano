@@ -48,6 +48,7 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 | `Arrows` | | Move cursor in active pane (Up/Down scrolls both synchronously) |
 | `Tab` or `Ctrl+I` | | Switch focus between the Accession Names pane and the Sequence pane |
 | `[` / `]` | | Decrease / increase Accession Name panel width |
+| `Ctrl+H` / `?` | `H` / `h` (Accession Pane only) | Open / close the interactive scrollable Help screen |
 | `Ctrl+Left` / `Ctrl+Right` / `Ctrl+L` / `Ctrl+R` | | Page sequences horizontally |
 | `Ctrl+U` / `Ctrl+D` | `Page Up` / `Page Down` | Page sequences/accessions vertically |
 | `Ctrl+T` | `T` (Accession Pane only) | Toggle dedicated **MOVE SEQUENCE (MOV)** mode (then use normal **Up/Down** arrows to shift it) |
