@@ -430,10 +430,7 @@ def save_fasta(filepath, headers, sequences):
     with open(filepath, "w", encoding="utf-8") as f:
         for h, s in zip(headers, sequences):
             f.write(f">{h}\n")
-            # Write sequence in standard 80-char block width or single line
-            # Aliview saves single line or block width, we'll write in 80-char chunks
-            for i in range(0, len(s), 80):
-                f.write(s[i : i + 80] + "\n")
+            f.write(s + "\n")
 
 
 def detect_vis_mode(sequences):
@@ -487,6 +484,14 @@ class StateHistory:
 # ==============================================================================
 # SCREEN RENDERING LOOP
 # ==============================================================================
+# Caches for performance optimization with large alignments
+_consensus_cache_state = None
+_consensus_col_cache = {}
+
+_diff_cache_state = None
+_diff_col_cache = {}
+
+
 def draw_screen(
     headers,
     sequences,
@@ -510,6 +515,9 @@ def draw_screen(
     alignment_format="fasta",
 ):
     """Composes and renders the entire editor layout to stdout in a single write."""
+    global _consensus_cache_state, _consensus_col_cache
+    global _diff_cache_state, _diff_col_cache
+
     cols, rows = shutil.get_terminal_size((80, 24))
     num_seqs = len(sequences)
     seq_len = len(sequences[0]) if num_seqs > 0 else 0
@@ -518,12 +526,41 @@ def draw_screen(
     seq_width = cols - acc_width - 4
     view_height = rows - 10 if num_seqs > 0 else rows - 9
 
+    # Fast fingerprint to detect sequence list modifications
+    seq_state = (len(sequences), sum(id(s) for s in sequences))
+    if _consensus_cache_state != seq_state:
+        _consensus_cache_state = seq_state
+        _consensus_col_cache = {}
+    if _diff_cache_state != seq_state:
+        _diff_cache_state = seq_state
+        _diff_col_cache = {}
+
+    # Pre-process search matches for fast O(1) row lookup in the viewport
+    acc_matches_by_row = {}
+    seq_matches_by_row = {}
+    if search_query and search_matches:
+        for r, c_start, pane in search_matches:
+            if row_offset <= r < row_offset + view_height:
+                if pane == "acc":
+                    if r not in acc_matches_by_row:
+                        acc_matches_by_row[r] = []
+                    acc_matches_by_row[r].append((c_start, len(search_query)))
+                elif pane == "seq":
+                    if r not in seq_matches_by_row:
+                        seq_matches_by_row[r] = []
+                    seq_matches_by_row[r].append((c_start, len(search_query)))
+
     # Calculate non-identical columns for DIFF visualization mode
     non_identical_cols = set()
     if vis_mode == "diff" and sequences:
         num_seqs_val = len(sequences)
         seq_len_val = len(sequences[0])
         for col_idx in range(col_offset, min(seq_len_val, col_offset + seq_width)):
+            if col_idx in _diff_col_cache:
+                if not _diff_col_cache[col_idx]:
+                    non_identical_cols.add(col_idx)
+                continue
+
             first_char = (
                 sequences[0][col_idx].upper() if col_idx < len(sequences[0]) else "-"
             )
@@ -537,6 +574,7 @@ def draw_screen(
                 if char != first_char:
                     is_identical = False
                     break
+            _diff_col_cache[col_idx] = is_identical
             if not is_identical:
                 non_identical_cols.add(col_idx)
 
@@ -612,15 +650,12 @@ def draw_screen(
         # Accession Subpane
         acc_part = ""
         if seq_idx < num_seqs:
-            name = headers[seq_idx]
+            max_idx_len = len(str(num_seqs))
+            name = f"{seq_idx + 1:>{max_idx_len}}: {headers[seq_idx]}"
             disp_name = name[:acc_width].ljust(acc_width)
 
             # Check if this row contains an accession search match
-            row_acc_matches = []
-            if search_query and search_matches:
-                for r, c_start, pane in search_matches:
-                    if pane == "acc" and r == seq_idx:
-                        row_acc_matches.append((c_start, len(search_query)))
+            row_acc_matches = acc_matches_by_row.get(seq_idx, [])
 
             # Render accession name
             if row_acc_matches:
@@ -704,12 +739,11 @@ def draw_screen(
 
                     # Check search match
                     is_search_match = False
-                    if search_query and search_matches:
-                        for r, c_start, pane in search_matches:
-                            if pane == "seq" and r == seq_idx:
-                                if c_start <= char_idx < c_start + len(search_query):
-                                    is_search_match = True
-                                    break
+                    row_seq_matches = seq_matches_by_row.get(seq_idx, [])
+                    for c_start, match_len in row_seq_matches:
+                        if c_start <= char_idx < c_start + match_len:
+                            is_search_match = True
+                            break
 
                     if is_cursor:
                         if active_pane == "seq" and not prompt_mode:
@@ -759,6 +793,10 @@ def draw_screen(
         for col_i in range(seq_width):
             col_idx = col_offset + col_i
             if col_idx < seq_len:
+                if col_idx in _consensus_col_cache:
+                    seq_part += _consensus_col_cache[col_idx]
+                    continue
+
                 # Collect residues in this column
                 col_chars = [
                     sequences[r][col_idx].upper()
@@ -777,28 +815,31 @@ def draw_screen(
                         # 100% identical: Bold Green
                         res = most_common_char.upper()
                         if has_256:
-                            seq_part += f"\x1b[1;38;5;46m{res}\x1b[0m"
+                            col_str = f"\x1b[1;38;5;46m{res}\x1b[0m"
                         else:
-                            seq_part += f"\x1b[1m{res}\x1b[0m"
+                            col_str = f"\x1b[1m{res}\x1b[0m"
                     elif freq >= 0.8:
                         # >=80%: Bold White
                         res = most_common_char.upper()
                         if has_256:
-                            seq_part += f"\x1b[1;38;5;231m{res}\x1b[0m"
+                            col_str = f"\x1b[1;38;5;231m{res}\x1b[0m"
                         else:
-                            seq_part += f"\x1b[1m{res}\x1b[0m"
+                            col_str = f"\x1b[1m{res}\x1b[0m"
                     elif freq >= 0.5:
                         # >=50%: Normal lowercase
                         res = most_common_char.lower()
-                        seq_part += res
+                        col_str = res
                     else:
                         # <50%: Dark grey dot
                         if has_256:
-                            seq_part += "\x1b[38;5;242m.\x1b[0m"
+                            col_str = "\x1b[38;5;242m.\x1b[0m"
                         else:
-                            seq_part += "."
+                            col_str = "."
                 else:
-                    seq_part += " "
+                    col_str = " "
+                
+                _consensus_col_cache[col_idx] = col_str
+                seq_part += col_str
             else:
                 seq_part += " "
         lines.append(f"|{acc_part}|{seq_part}|")
@@ -1247,8 +1288,11 @@ def run_editor(filepath):
                                 matches.append((r, idx, "seq"))
                                 pos = idx + 1
                         for r, name in enumerate(headers):
-                            if query.upper() in name.upper():
-                                matches.append((r, 0, "acc"))
+                            max_idx_len = len(str(len(headers)))
+                            full_acc = f"{r + 1:>{max_idx_len}}: {name}"
+                            idx = full_acc.upper().find(query.upper())
+                            if idx != -1:
+                                matches.append((r, idx, "acc"))
                         matches.sort(
                             key=lambda m: (m[0], m[1] if m[2] == "seq" else -1)
                         )
@@ -1518,13 +1562,10 @@ def run_editor(filepath):
                     sequences[cursor_row] = (
                         current_seq[:cursor_col] + "-" + current_seq[cursor_col:]
                     )
-                    # Check new max length and pad all others
-                    max_len = max(len(s) for s in sequences)
+                    # Pad all other sequences to align with new length
                     for i in range(len(sequences)):
-                        if len(sequences[i]) < max_len:
-                            sequences[i] = sequences[i] + "-" * (
-                                max_len - len(sequences[i])
-                            )
+                        if i != cursor_row:
+                            sequences[i] += "-"
                 else:
                     # Overwrite mode: replaces character under cursor, maintaining length
                     if cursor_col < len(current_seq):
@@ -1553,12 +1594,9 @@ def run_editor(filepath):
                         current_seq[:cursor_col] + c_char + current_seq[cursor_col:]
                     )
                     # Pad all other sequences to align with new length
-                    max_len = max(len(s) for s in sequences)
                     for i in range(len(sequences)):
-                        if len(sequences[i]) < max_len:
-                            sequences[i] = sequences[i] + "-" * (
-                                max_len - len(sequences[i])
-                            )
+                        if i != cursor_row:
+                            sequences[i] += "-"
                 else:
                     # Overwrite mode: replaces char at cursor
                     sequences[cursor_row] = (
