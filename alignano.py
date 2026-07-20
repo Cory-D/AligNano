@@ -175,6 +175,7 @@ def read_key():
 
         common_map = {
             "\x01": "ADD_ROW",  # Ctrl+A
+            "\x02": "TOGGLE_MOVE",  # Ctrl+B
             "\x04": "PAGE_DOWN",  # Ctrl+D
             "\x05": "EDIT_NAME",  # Ctrl+E
             "\x06": "SEARCH",  # Ctrl+F
@@ -186,7 +187,7 @@ def read_key():
             "\x11": "QUIT",  # Ctrl+Q
             "\x12": "PAGE_RIGHT",  # Ctrl+R
             "\x13": "SAVE",  # Ctrl+S
-            "\x14": "TOGGLE_MOVE",  # Ctrl+T
+            "\x14": "TRANSLATE",  # Ctrl+T
             "\x15": "PAGE_UP",  # Ctrl+U
             "\x16": "CYCLE_COLORS",  # Ctrl+V
             "\x17": "SORT_DIST",  # Ctrl+W
@@ -237,6 +238,7 @@ def read_key():
 
             common_map = {
                 "\x01": "ADD_ROW",  # Ctrl+A
+                "\x02": "TOGGLE_MOVE",  # Ctrl+B
                 "\x04": "PAGE_DOWN",  # Ctrl+D
                 "\x05": "EDIT_NAME",  # Ctrl+E
                 "\x06": "SEARCH",  # Ctrl+F
@@ -248,7 +250,7 @@ def read_key():
                 "\x11": "QUIT",  # Ctrl+Q
                 "\x12": "PAGE_RIGHT",  # Ctrl+R
                 "\x13": "SAVE",  # Ctrl+S
-                "\x14": "TOGGLE_MOVE",  # Ctrl+T
+                "\x14": "TRANSLATE",  # Ctrl+T
                 "\x15": "PAGE_UP",  # Ctrl+U
                 "\x16": "CYCLE_COLORS",  # Ctrl+V
                 "\x17": "SORT_DIST",  # Ctrl+W
@@ -431,6 +433,139 @@ def save_fasta(filepath, headers, sequences):
         for h, s in zip(headers, sequences):
             f.write(f">{h}\n")
             f.write(s + "\n")
+
+
+# ==============================================================================
+# DNA TO PROTEIN TRANSLATION TABLES & LOGIC
+# ==============================================================================
+STANDARD_CODON_TABLE = {
+    "TTT": "F", "TTC": "F", "TTA": "L", "TTG": "L",
+    "TCT": "S", "TCC": "S", "TCA": "S", "TCG": "S",
+    "TAT": "Y", "TAC": "Y", "TAA": "*", "TAG": "*",
+    "TGT": "C", "TGC": "C", "TGA": "*", "TGG": "W",
+    "CTT": "L", "CTC": "L", "CTA": "L", "CTG": "L",
+    "CCT": "P", "CCC": "P", "CCA": "P", "CCG": "P",
+    "CAT": "H", "CAC": "H", "CAA": "Q", "CAG": "Q",
+    "CGT": "R", "CGC": "R", "CGA": "R", "CGG": "R",
+    "ATT": "I", "ATC": "I", "ATA": "I", "ATG": "M",
+    "ACT": "T", "ACC": "T", "ACA": "T", "ACG": "T",
+    "AAT": "N", "AAC": "N", "AAA": "K", "AAG": "K",
+    "AGT": "S", "AGC": "S", "AGA": "R", "AGG": "R",
+    "GTT": "V", "GTC": "V", "GTA": "V", "GTG": "V",
+    "GCT": "A", "GCC": "A", "GCA": "A", "GCG": "A",
+    "GAT": "D", "GAC": "D", "GAA": "E", "GAG": "E",
+    "GGT": "G", "GGC": "G", "GGA": "G", "GGG": "G",
+}
+
+GENETIC_CODE_OVERRIDES = {
+    1: {},  # Standard Code
+    2: {"AGA": "*", "AGG": "*", "ATA": "M", "TGA": "W"},  # Vertebrate Mitochondrial
+    3: {"ATA": "M", "CTT": "T", "CTC": "T", "CTA": "T", "CTG": "T", "TGA": "W"},  # Yeast Mitochondrial
+    4: {"TGA": "W"},  # Mold, Protozoan, Coelenterate Mito / Mycoplasma
+    5: {"AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W"},  # Invertebrate Mitochondrial
+    6: {"TAA": "Q", "TAG": "Q"},  # Ciliate, Dasycladacean, Hexamita Nuclear
+    9: {"AAA": "N", "AGA": "S", "AGG": "S", "TGA": "W"},  # Echinoderm and Flatworm Mito
+    10: {"TGA": "C"},  # Euplotid Nuclear
+    11: {},  # Bacterial, Archaeal and Plant Plastid
+    12: {"CTG": "S"},  # Alternative Yeast Nuclear
+    13: {"AGA": "G", "AGG": "G", "ATA": "M", "TGA": "W"},  # Ascidian Mitochondrial
+    14: {"AAA": "N", "AGA": "S", "AGG": "S", "TAA": "Y", "TGA": "W"},  # Alternative Flatworm Mito
+    15: {"TAG": "Q"},  # Blepharisma Nuclear
+    16: {"TAG": "L"},  # Chlorophycean Mitochondrial
+    21: {"AAA": "N", "AGA": "S", "AGG": "S", "ATA": "M", "TAA": "Y", "TGA": "W"},  # Trematode Mito
+    22: {"TCA": "*", "TAG": "L"},  # Scenedesmus obliquus Mito
+    23: {"TTA": "*"},  # Thraustochytrium Mito
+    24: {"AGA": "S", "AGG": "K", "ATA": "M", "TGA": "W"},  # Rhabdopleuridae Mito
+    25: {"TGA": "G"},  # Candidate Division SR1 / Gracilibacteria
+    26: {"CTG": "A"},  # Pachysolen tannophilus Nuclear
+    27: {"TAA": "Q", "TAG": "Q", "TGA": "W"},  # Karyorelict Nuclear
+    28: {"TAA": "Q", "TAG": "Q", "TGA": "W"},  # Condylostoma Nuclear
+    29: {"TAA": "Y", "TAG": "Y"},  # Mesodinium Nuclear
+    30: {"TAA": "Q", "TAG": "Q"},  # Peritrich Nuclear
+    31: {"TAA": "E", "TAG": "E", "TGA": "W"},  # Blastocrithidia Nuclear
+    33: {"AGA": "S", "AGG": "K", "ATA": "M", "TGA": "W"},  # Cephalodiscidae Mito
+}
+
+GENETIC_CODE_NAMES = {
+    1: "Standard Code",
+    2: "Vertebrate Mitochondrial",
+    3: "Yeast Mitochondrial",
+    4: "Mold/Protozoan/Coelenterate Mito",
+    5: "Invertebrate Mitochondrial",
+    6: "Ciliate Nuclear",
+    9: "Echinoderm/Flatworm Mito",
+    10: "Euplotid Nuclear",
+    11: "Bacterial/Archaeal/Plastid",
+    12: "Alternative Yeast Nuclear",
+    13: "Ascidian Mitochondrial",
+    14: "Alternative Flatworm Mito",
+    15: "Blepharisma Nuclear",
+    16: "Chlorophycean Mito",
+    21: "Trematode Mitochondrial",
+    22: "Scenedesmus obliquus Mito",
+    23: "Thraustochytrium Mito",
+    24: "Rhabdopleuridae Mito",
+    25: "Candidate Division SR1",
+    26: "Pachysolen tannophilus",
+    27: "Karyorelict Nuclear",
+    28: "Condylostoma Nuclear",
+    29: "Mesodinium Nuclear",
+    30: "Peritrich Nuclear",
+    31: "Blastocrithidia Nuclear",
+    33: "Cephalodiscidae Mito",
+}
+
+
+def get_codon_table(code_id=1):
+    """Returns codon translation table for given NCBI code ID."""
+    table = STANDARD_CODON_TABLE.copy()
+    overrides = GENETIC_CODE_OVERRIDES.get(code_id, {})
+    table.update(overrides)
+    return table
+
+
+COMPLEMENT_MAP = str.maketrans(
+    "ATCGURYSWKMBDHVatcguryswkmbdhv",
+    "TAGCAYRSWMKVHDBtagcayrswmkvhdb",
+)
+
+
+def reverse_complement(seq):
+    """Calculates reverse complement of a nucleotide sequence string."""
+    return seq.translate(COMPLEMENT_MAP)[::-1]
+
+
+def translate_alignment(sequences, frame_str="+1", code_id=1):
+    """Translates a list of aligned DNA sequence strings to protein sequences."""
+    frame_clean = str(frame_str).strip()
+    is_reverse = frame_clean.startswith("-")
+    try:
+        frame_num = abs(int(frame_clean))
+        if frame_num not in (1, 2, 3):
+            frame_num = 1
+    except ValueError:
+        frame_num = 1
+        is_reverse = False
+
+    offset = frame_num - 1
+    table = get_codon_table(code_id)
+
+    translated_seqs = []
+    for seq in sequences:
+        s = reverse_complement(seq) if is_reverse else seq
+        s_sliced = s[offset:]
+        aa_list = []
+        for i in range(0, len(s_sliced) - 2, 3):
+            codon = s_sliced[i : i + 3].upper().replace("U", "T")
+            if codon in ("---", "..."):
+                aa_list.append("-")
+            elif codon in table:
+                aa_list.append(table[codon])
+            else:
+                aa_list.append("X")
+        translated_seqs.append("".join(aa_list))
+
+    return translated_seqs
 
 
 def detect_vis_mode(sequences):
@@ -932,6 +1067,7 @@ def run_editor(filepath):
     prompt_mode = None
     prompt_text = ""
     prompt_input = ""
+    pending_frame = "+1"
 
     search_query = ""
     search_matches = []
@@ -1236,6 +1372,45 @@ def run_editor(filepath):
                             status_expiry = time.time() + 3.0
                     prompt_mode = None
                     prompt_input = ""
+                elif prompt_mode == "translate_frame":
+                    val = prompt_input.strip()
+                    if not val:
+                        val = "+1"
+                    if val not in ("+1", "+2", "+3", "-1", "-2", "-3", "1", "2", "3", "-1", "-2", "-3"):
+                        status_msg = "Invalid reading frame! Use +1, +2, +3, -1, -2, or -3."
+                        status_expiry = time.time() + 3.0
+                        prompt_mode = None
+                        prompt_input = ""
+                    else:
+                        if not val.startswith("+") and not val.startswith("-"):
+                            val = "+" + val
+                        pending_frame = val
+                        prompt_mode = "translate_code"
+                        prompt_text = "Select Genetic Code (1:Standard 2:VertMito 3:YeastMito 4:MoldMito 5:InvertMito 6:Ciliate 9:Echinoderm 10:Euplotid 11:Bact) [1]: "
+                        prompt_input = ""
+                elif prompt_mode == "translate_code":
+                    val = prompt_input.strip()
+                    if not val:
+                        val = "1"
+                    try:
+                        code_id = int(val)
+                        if code_id not in GENETIC_CODE_NAMES:
+                            code_id = 1
+                    except ValueError:
+                        code_id = 1
+                    if sequences:
+                        history.push_state(headers, sequences)
+                        sequences = translate_alignment(sequences, pending_frame, code_id)
+                        vis_mode = "aa"
+                        cursor_col = max(0, cursor_col // 3)
+                        modified = True
+                        code_name = GENETIC_CODE_NAMES.get(code_id, "Standard Code")
+                        status_msg = f"Translated to Protein (Frame {pending_frame}, Code {code_id}: {code_name}). Press Ctrl+Z to undo."
+                    else:
+                        status_msg = "No sequences to translate."
+                    status_expiry = time.time() + 4.0
+                    prompt_mode = None
+                    prompt_input = ""
                 elif prompt_mode == "add_seq":
                     name = (
                         prompt_input.strip()
@@ -1392,7 +1567,12 @@ def run_editor(filepath):
             # Page sequence right (columns)
             cursor_col = min(seq_len - 1, cursor_col + (seq_width - 5))
 
-        elif key == "TOGGLE_MOVE" or (is_cmd_mode and key in ("T", "t")):
+        elif key == "TRANSLATE" or (is_cmd_mode and key in ("T", "t")):
+            prompt_mode = "translate_frame"
+            prompt_text = "Select Reading Frame (+1, +2, +3, -1, -2, -3) [default: +1]: "
+            prompt_input = ""
+
+        elif key == "TOGGLE_MOVE" or (is_cmd_mode and key in ("M", "m")):
             move_mode = True
             status_msg = "Entered Move Mode (Use Up/Down arrows to move sequence)"
             status_expiry = time.time() + 3.0
@@ -1660,11 +1840,12 @@ def display_help_screen():
             ]),
             ("EDITOR COMMANDS", [
                 ("Ctrl+F", "Search motif or accession name"),
-                ("Ctrl+T", "Toggle Move Mode (use Up/Down arrows to reorder sequence)"),
+                ("Ctrl+T", "Translate DNA alignment to Protein (frame & genetic code)"),
+                ("Ctrl+B / M", "Toggle Move Mode (use Up/Down arrows to reorder sequence)"),
                 ("Ctrl+W", "Sort all sequences by Levenshtein distance to top sequence"),
                 ("Ctrl+V", "Cycle color scheme (DNA/RNA -> Protein -> Diff -> Mono)"),
                 ("Ctrl+P", "Toggle alignment format between FASTA and A3M"),
-                ("Ctrl+G", "Export column consensus frequencies to a text file"),
+                ("Ctrl+G", "Export column consensus frequencies to CSV files"),
                 ("Ctrl+S", "Save current alignment to FASTA/A3M file"),
                 ("Ctrl+Q", "Quit alignment editor (checks for unsaved changes)"),
                 ("Ctrl+H / ?", "Toggle this interactive Help viewer"),

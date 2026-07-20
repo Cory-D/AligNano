@@ -38,7 +38,8 @@ Delete / Ctrl+K\tDelete base (in sequence pane)
 Delete / Ctrl+K\tDelete highlighted row (in names pane)
 Ctrl+N / Ctrl+A\tAdd new empty sequence row
 Ctrl+E / E\tEdit highlighted accession name
-Ctrl+T / T\tToggle row move mode (re-order)
+Ctrl+T / T\tTranslate DNA alignment to Protein
+Ctrl+B / M\tToggle row move mode (re-order)
 .sp 0.3
 \\fB[ ALIGNMENT CONTROLS ]\\fR
 .sp 0.1
