@@ -17,7 +17,7 @@ A lightweight, dependency-free Python terminal interface for browsing and editin
   - **CTRL keys / Pages**: Page up, down, left, or right quickly. Supports Ctrl+Arrow keys and letter mappings.
   - **Direct Editing**: Overwrite or insert characters, insert gaps, delete characters, edit accession headers, add new sequences, or delete rows.
 - **Undo/Redo History**: Deep undo stack (up to 50 states) for sequences and accession edits.
-- **Multiple Alignment Formats**: Seamlessly load, edit, convert, and save alignments in FASTA, A3M, and Stockholm (`.sto` / `.stk`) formats.
+- **Multiple Alignment Formats**: Seamlessly load, edit, convert, and save alignments in FASTA, A3M, and Stockholm (`.sto` / `.stk`) formats. *(Note: When loading Stockholm files, sequence alignment data and identifiers are parsed while file/column/residue annotation metadata tags such as `#=GF`, `#=GS`, `#=GC`, and `#=GR` are stripped).*
 - **Sandbox Safe**: Only reads and writes inside the workspace directory (`AligNano`).
 - **Zero Dependencies**: Native cross-platform compatibility utilizing Unix `termios` and Windows `msvcrt`/`ctypes` VT.
 
