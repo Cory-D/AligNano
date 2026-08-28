@@ -436,6 +436,89 @@ def save_fasta(filepath, headers, sequences):
 
 
 # ==============================================================================
+# STOCKHOLM (.STO) FILE PARSING & SAVING
+# ==============================================================================
+def load_stockholm(filepath):
+    """Loads a Stockholm (.sto/.stk) alignment file and returns headers and padded sequences."""
+    seq_dict = {}
+    if not os.path.exists(filepath):
+        return [], []
+
+    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                continue
+            if line == "//":
+                break  # End of alignment record
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                name, chunk = parts[0], parts[1].replace(" ", "").replace(".", "-")
+                if name not in seq_dict:
+                    seq_dict[name] = []
+                seq_dict[name].append(chunk)
+
+    headers = list(seq_dict.keys())
+    sequences = ["".join(chunks) for chunks in seq_dict.values()]
+
+    # Pad sequences to max length with gaps
+    if sequences:
+        max_len = max(len(s) for s in sequences)
+        for i in range(len(sequences)):
+            if len(sequences[i]) < max_len:
+                sequences[i] = sequences[i] + "-" * (max_len - len(sequences[i]))
+
+    return headers, sequences
+
+
+def save_stockholm(filepath, headers, sequences):
+    """Saves headers and sequences to Stockholm (.sto) format."""
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write("# STOCKHOLM 1.0\n\n")
+        max_name_len = max((len(h) for h in headers), default=10)
+        for h, s in zip(headers, sequences):
+            f.write(f"{h:<{max_name_len + 4}}{s}\n")
+        f.write("//\n")
+
+
+def load_alignment(filepath):
+    """Loads an alignment from FASTA, A3M, or Stockholm format."""
+    if not filepath or not os.path.exists(filepath):
+        return [], [], "fasta"
+
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext in (".sto", ".stk", ".stockholm"):
+        headers, sequences = load_stockholm(filepath)
+        return headers, sequences, "sto"
+
+    # Check first non-empty line for Stockholm signature
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    if line.startswith("# STOCKHOLM") or line.startswith("#=GF"):
+                        headers, sequences = load_stockholm(filepath)
+                        return headers, sequences, "sto"
+                    break
+    except Exception:
+        pass
+
+    # Default to FASTA / A3M loader
+    headers, sequences = load_fasta(filepath)
+    if ext == ".a3m":
+        try:
+            sequences = a3m_to_fasta(sequences)
+            return headers, sequences, "a3m"
+        except Exception:
+            return headers, sequences, "a3m"
+
+    return headers, sequences, "fasta"
+
+
+# ==============================================================================
 # DNA TO PROTEIN TRANSLATION TABLES & LOGIC
 # ==============================================================================
 STANDARD_CODON_TABLE = {
@@ -460,7 +543,7 @@ STANDARD_CODON_TABLE = {
 GENETIC_CODE_OVERRIDES = {
     1: {},  # Standard Code
     2: {"AGA": "*", "AGG": "*", "ATA": "M", "TGA": "W"},  # Vertebrate Mitochondrial
-    3: {"ATA": "M", "CTT": "T", "CTC": "T", "CTA": "T", "CTG": "T", "TGA": "W"},  # Yeast Mitochondrial
+    3: {"ATA": "M", "CTA": "T", "CTC": "T", "CTG": "T", "CTT": "T", "TGA": "W"},  # Yeast Mitochondrial
     4: {"TGA": "W"},  # Mold, Protozoan, Coelenterate Mito / Mycoplasma
     5: {"AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W"},  # Invertebrate Mitochondrial
     6: {"TAA": "Q", "TAG": "Q"},  # Ciliate, Dasycladacean, Hexamita Nuclear
@@ -472,18 +555,19 @@ GENETIC_CODE_OVERRIDES = {
     14: {"AAA": "N", "AGA": "S", "AGG": "S", "TAA": "Y", "TGA": "W"},  # Alternative Flatworm Mito
     15: {"TAG": "Q"},  # Blepharisma Nuclear
     16: {"TAG": "L"},  # Chlorophycean Mitochondrial
-    21: {"AAA": "N", "AGA": "S", "AGG": "S", "ATA": "M", "TAA": "Y", "TGA": "W"},  # Trematode Mito
+    21: {"AAA": "N", "AGA": "S", "AGG": "S", "ATA": "M", "TGA": "W"},  # Trematode Mito
     22: {"TCA": "*", "TAG": "L"},  # Scenedesmus obliquus Mito
     23: {"TTA": "*"},  # Thraustochytrium Mito
-    24: {"AGA": "S", "AGG": "K", "ATA": "M", "TGA": "W"},  # Rhabdopleuridae Mito
+    24: {"AGA": "S", "AGG": "K", "TGA": "W"},  # Rhabdopleuridae Mito
     25: {"TGA": "G"},  # Candidate Division SR1 / Gracilibacteria
     26: {"CTG": "A"},  # Pachysolen tannophilus Nuclear
     27: {"TAA": "Q", "TAG": "Q", "TGA": "W"},  # Karyorelict Nuclear
     28: {"TAA": "Q", "TAG": "Q", "TGA": "W"},  # Condylostoma Nuclear
     29: {"TAA": "Y", "TAG": "Y"},  # Mesodinium Nuclear
-    30: {"TAA": "Q", "TAG": "Q"},  # Peritrich Nuclear
+    30: {"TAA": "E", "TAG": "E"},  # Peritrich Nuclear
     31: {"TAA": "E", "TAG": "E", "TGA": "W"},  # Blastocrithidia Nuclear
-    33: {"AGA": "S", "AGG": "K", "ATA": "M", "TGA": "W"},  # Cephalodiscidae Mito
+    32: {"TAG": "W"},  # Balanophoraceae Plastid
+    33: {"AGA": "S", "AGG": "K", "TAA": "Y", "TGA": "W"},  # Cephalodiscidae Mito
 }
 
 GENETIC_CODE_NAMES = {
@@ -512,6 +596,7 @@ GENETIC_CODE_NAMES = {
     29: "Mesodinium Nuclear",
     30: "Peritrich Nuclear",
     31: "Blastocrithidia Nuclear",
+    32: "Balanophoraceae Plastid",
     33: "Cephalodiscidae Mito",
 }
 
@@ -1020,8 +1105,8 @@ def draw_screen(
 # MAIN EDITOR SESSION
 # ==============================================================================
 def run_editor(filepath):
-    """Main keyboard polling and state update loop for the FASTA editor."""
-    headers, sequences = load_fasta(filepath)
+    """Main keyboard polling and state update loop for the alignment editor."""
+    headers, sequences, alignment_format = load_alignment(filepath)
     filename = filepath
 
     # If file was not loaded or empty, initialize with placeholder values
@@ -1044,16 +1129,6 @@ def run_editor(filepath):
     modified = False
     acc_width_delta = 0
     move_mode = False
-    alignment_format = "fasta"
-
-    # Auto-detect format from file extension
-    if filepath and filepath.lower().endswith(".a3m"):
-        alignment_format = "a3m"
-        try:
-            sequences = a3m_to_fasta(sequences)
-        except Exception as e:
-            status_msg = f"Failed to parse A3M: {str(e)}"
-            status_expiry = time.time() + 4.0
 
     history = StateHistory()
 
@@ -1197,7 +1272,9 @@ def run_editor(filepath):
                     dest_file = prompt_input.strip()
                     if dest_file:
                         # Auto-toggle format based on destination file extension
-                        if dest_file.lower().endswith(".a3m"):
+                        if dest_file.lower().endswith((".sto", ".stk", ".stockholm")):
+                            alignment_format = "sto"
+                        elif dest_file.lower().endswith(".a3m"):
                             alignment_format = "a3m"
                         elif dest_file.lower().endswith((".fasta", ".fa", ".fas")):
                             alignment_format = "fasta"
@@ -1209,11 +1286,13 @@ def run_editor(filepath):
                             status_expiry = time.time() + 4.0
                         else:
                             try:
-                                if alignment_format == "a3m":
+                                if alignment_format in ("sto", "stockholm"):
+                                    save_stockholm(dest_file, headers, sequences)
+                                elif alignment_format == "a3m":
                                     save_seqs = fasta_to_a3m(sequences)
+                                    save_fasta(dest_file, headers, save_seqs)
                                 else:
-                                    save_seqs = sequences
-                                save_fasta(dest_file, headers, save_seqs)
+                                    save_fasta(dest_file, headers, sequences)
                                 filename = dest_file
                                 modified = False
                                 status_msg = f"Alignment successfully saved to: {os.path.basename(dest_file)}"
@@ -1617,7 +1696,12 @@ def run_editor(filepath):
             status_expiry = time.time() + 2.0
 
         elif key == "TOGGLE_FORMAT" or (is_cmd_mode and key in ("P", "p")):
-            alignment_format = "a3m" if alignment_format == "fasta" else "fasta"
+            if alignment_format == "fasta":
+                alignment_format = "a3m"
+            elif alignment_format == "a3m":
+                alignment_format = "sto"
+            else:
+                alignment_format = "fasta"
             status_msg = f"Alignment Format toggled to: {alignment_format.upper()}"
             status_expiry = time.time() + 2.0
 
@@ -1844,9 +1928,9 @@ def display_help_screen():
                 ("Ctrl+B / M", "Toggle Move Mode (use Up/Down arrows to reorder sequence)"),
                 ("Ctrl+W", "Sort all sequences by Levenshtein distance to top sequence"),
                 ("Ctrl+V", "Cycle color scheme (DNA/RNA -> Protein -> Diff -> Mono)"),
-                ("Ctrl+P", "Toggle alignment format between FASTA and A3M"),
+                ("Ctrl+P", "Toggle alignment format (FASTA -> A3M -> STO)"),
                 ("Ctrl+G", "Export column consensus frequencies to CSV files"),
-                ("Ctrl+S", "Save current alignment to FASTA/A3M file"),
+                ("Ctrl+S", "Save current alignment to FASTA/A3M/STO file"),
                 ("Ctrl+Q", "Quit alignment editor (checks for unsaved changes)"),
                 ("Ctrl+H / ?", "Toggle this interactive Help viewer"),
             ])
@@ -2043,7 +2127,7 @@ def display_file_selector(files, selected_idx, scroll_offset, view_height):
 
     # Render files list using viewport windowing
     if len(files) == 1 and files[0] == "[ Go Back ]":
-        lines.append("     (No .fasta or .a3m files found in current directory)")
+        lines.append("     (No .fasta, .a3m, or .sto files found in current directory)")
         lines.append("")
     else:
         # Determine slice of files to render
@@ -2086,9 +2170,9 @@ def display_file_selector(files, selected_idx, scroll_offset, view_height):
 
 
 def run_file_selector():
-    """Interactive menu to select a FASTA/A3M file from the current directory and subdirectories."""
+    """Interactive menu to select a FASTA/A3M/STO file from the current directory and subdirectories."""
     # List files case-insensitively matching standard extensions
-    valid_exts = (".fasta", ".fa", ".msa", ".seq", ".a3m")
+    valid_exts = (".fasta", ".fa", ".msa", ".seq", ".a3m", ".sto", ".stk", ".stockholm")
     files = []
     for root, dirs, filenames in os.walk("."):
         # Prune hidden directories (e.g. .git) and __pycache__
@@ -2148,10 +2232,10 @@ def main():
         run_editor(filepath)
         return
 
-    choices = ["Load Alignment (FASTA or A3M)", "Create New Empty Alignment", "Exit"]
+    choices = ["Load Alignment (FASTA, A3M, or STO)", "Create New Empty Alignment", "Exit"]
 
     selected_idx = 0
-    valid_exts = (".fasta", ".fa", ".msa", ".seq", ".a3m")
+    valid_exts = (".fasta", ".fa", ".msa", ".seq", ".a3m", ".sto", ".stk", ".stockholm")
 
     # Hide cursor
     sys.stdout.write("\x1b[?25l")
@@ -2177,7 +2261,7 @@ def main():
                     break
                 elif choice == "Create New Empty Alignment":
                     # Prompt for file name
-                    sys.stdout.write("\x1b[?25h\n Enter name for new FASTA/A3M file: ")
+                    sys.stdout.write("\x1b[?25h\n Enter name for new FASTA/A3M/STO file: ")
                     sys.stdout.flush()
                     new_filename = sys.stdin.readline().strip()
                     sys.stdout.write("\x1b[?25l")
@@ -2198,10 +2282,13 @@ def main():
                         continue
 
                     # Initialize empty alignment
-                    save_fasta(new_filename, ["Seq_1"], ["ACTG-ACTG-ACTG-ACTG"])
+                    if new_filename.lower().endswith((".sto", ".stk", ".stockholm")):
+                        save_stockholm(new_filename, ["Seq_1"], ["ACTG-ACTG-ACTG-ACTG"])
+                    else:
+                        save_fasta(new_filename, ["Seq_1"], ["ACTG-ACTG-ACTG-ACTG"])
                     run_editor(new_filename)
                     break
-                elif choice == "Load Alignment (FASTA or A3M)":
+                elif choice == "Load Alignment (FASTA, A3M, or STO)":
                     selected_file = run_file_selector()
                     if selected_file:
                         run_editor(selected_file)

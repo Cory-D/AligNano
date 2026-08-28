@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+freqs/
+build_instruction_sheet.py
+*.tr
+*.ps

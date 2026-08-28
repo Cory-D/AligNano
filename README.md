@@ -1,6 +1,6 @@
-# AligNano: Terminal FASTA and A3M Alignment Editor
+# AligNano: Terminal FASTA, A3M, and Stockholm (STO) Alignment Editor
 
-A lightweight, dependency-free Python terminal interface for browsing and editing multiple sequence alignments (MSA) in FASTA and A3M formats. It provides a real-time color-coded alignment grid, designed for efficient sequence inspection directly from the command line.
+A lightweight, dependency-free Python terminal interface for browsing and editing multiple sequence alignments (MSA) in FASTA, A3M, and Stockholm (`.sto` / `.stk`) formats. It provides a real-time color-coded alignment grid, designed for efficient sequence inspection directly from the command line.
 
 ## Features
 
@@ -17,6 +17,7 @@ A lightweight, dependency-free Python terminal interface for browsing and editin
   - **CTRL keys / Pages**: Page up, down, left, or right quickly. Supports Ctrl+Arrow keys and letter mappings.
   - **Direct Editing**: Overwrite or insert characters, insert gaps, delete characters, edit accession headers, add new sequences, or delete rows.
 - **Undo/Redo History**: Deep undo stack (up to 50 states) for sequences and accession edits.
+- **Multiple Alignment Formats**: Seamlessly load, edit, convert, and save alignments in FASTA, A3M, and Stockholm (`.sto` / `.stk`) formats.
 - **Sandbox Safe**: Only reads and writes inside the workspace directory (`AligNano`).
 - **Zero Dependencies**: Native cross-platform compatibility utilizing Unix `termios` and Windows `msvcrt`/`ctypes` VT.
 
@@ -28,7 +29,7 @@ Ensure you have Python 3 installed. No third-party modules or installations are 
 
 ### 1. Launch with the Interactive Menu
 
-To load and choose from available FASTA files in the workspace (or create a new empty alignment):
+To load and choose from available FASTA, A3M, or Stockholm files in the workspace (or create a new empty alignment):
 ```bash
 python3 alignano.py
 ```
@@ -36,7 +37,7 @@ python3 alignano.py
 ### 2. Launch directly with a specific file
 
 ```bash
-python3 alignano.py input_examples/ubiquitin_dna.fasta
+python3 alignano.py input_examples/ubiquitin_dna.sto
 ```
 
 ---
@@ -61,20 +62,20 @@ Every feature can be invoked using standard control (**Ctrl**) shortcuts, which 
 | `Ctrl+N` / `Ctrl+A` | `N` / `A` (Accession Pane only) | Add a new empty sequence row |
 | `Ctrl+X` | `X` (Accession Pane only) | Delete current sequence row (requires confirmation) |
 | `Ctrl+V` | `V` (Accession Pane only) | Cycle color visualization modes (**DNA/RNA** ➔ **Protein** ➔ **DIFF (variable sites)** ➔ **Monochrome**) |
-| `Ctrl+P` | `P` (Accession Pane only) | Toggle alignment file save format (**FASTA** ➔ **A3M** ➔ **FASTA**) |
+| `Ctrl+P` | `P` (Accession Pane only) | Toggle alignment file save format (**FASTA** ➔ **A3M** ➔ **STO** ➔ **FASTA**) |
 | `Ctrl+W` | `C` (Accession Pane only) | Sort/cluster sequences by Levenshtein distance relative to the top reference sequence |
 | `Ctrl+F` | | Open search prompt (find accession name or sequence motif) |
 | `Ctrl+J` | | Jump to the next search match |
 | `Ctrl+G` | `G` (Accession Pane only) | Export transposed character counts/frequencies (all and polymorphic-only) CSVs |
 | `Ctrl+Z` | `U` (Accession Pane only) | Undo last action |
 | `Ctrl+Y` | `Y` (Accession Pane only) | Redo last action |
-| `Ctrl+S` | `S` (Accession Pane only) | Save current alignment to a FASTA file |
+| `Ctrl+S` | `S` (Accession Pane only) | Save current alignment to a file (FASTA, A3M, or STO) |
 | `Ctrl+Q` | `Q` (Accession Pane only) | Quit editor (warns if there are unsaved changes) |
 
 ---
 
 ## Sample Alignments Included
 
-We have provided four curated, biologically authentic eukaryotic ubiquitin alignments:
-1. `input_examples/ubiquitin_dna.fasta` / `input_examples/ubiquitin_dna.a3m` - Codon-aligned mature ubiquitin DNA coding sequences (228 bp) from 20 diverse eukaryotic species in FASTA and A3M formats.
-2. `input_examples/ubiquitin_protein.fasta` / `input_examples/ubiquitin_protein.a3m` - Aligned mature ubiquitin protein sequences (76 AA) from the same 20 eukaryotic species in FASTA and A3M formats.
+We have provided curated, biologically authentic eukaryotic ubiquitin alignments in all supported formats:
+1. `input_examples/ubiquitin_dna.fasta` / `input_examples/ubiquitin_dna.a3m` / `input_examples/ubiquitin_dna.sto` - Codon-aligned mature ubiquitin DNA coding sequences (228 bp) from 20 diverse eukaryotic species in FASTA, A3M, and Stockholm formats.
+2. `input_examples/ubiquitin_protein.fasta` / `input_examples/ubiquitin_protein.a3m` / `input_examples/ubiquitin_protein.sto` - Aligned mature ubiquitin protein sequences (76 AA) from the same 20 eukaryotic species in FASTA, A3M, and Stockholm formats.
