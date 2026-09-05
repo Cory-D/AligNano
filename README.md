@@ -59,7 +59,7 @@ Press **`ESC`** at any time to open the side-by-side modal menu:
 |---|---|
 | **1. File** | Save Alignment (`Ctrl+S`), Toggle Alignment Format (FASTA / A3M / STO), Export Frequencies (CSV), Help & Overview (`?`), Quit Editor (`Ctrl+Q`) |
 | **2. Edit** | Undo (`Ctrl+Z`), Redo (`Ctrl+Y`), Toggle Insert/Overwrite (`Insert`), Rename Accession Header, Add Sequence Row, Delete Sequence Row, Reorder/Move Row |
-| **3. Display** | Directly select Color Scheme (*DNA/RNA*, *Protein ClustalX*, *DIFF Variable Sites*, *Monochrome*), Toggle Mouse Mode (`F2`), Widen Accession Pane (`]`), Narrow Accession Pane (`[`), Page Left, Page Right |
+| **3. Display** | Directly select Color Scheme (*DNA/RNA*, *Protein ClustalX*, *DIFF Variable Sites*, *Monochrome*), Toggle Mouse Mode, Widen Accession Pane (`]`), Narrow Accession Pane (`[`), Page Left, Page Right |
 | **4. Tools** | Search Motif or Header (`Ctrl+F`), Jump to Next Match (`Ctrl+J`), Translate DNA to Protein (6 reading frames, 26 NCBI code tables), Sort by Levenshtein distance |
 
 ### Reserved Direct Shortcuts
@@ -67,7 +67,6 @@ Press **`ESC`** at any time to open the side-by-side modal menu:
 | Key / Shortcut | Action |
 |---|---|
 | **`ESC`** | Open / Close the AligNano Main Menu |
-| **`F2`** | Toggle Mouse Support ON / OFF (Click cursor placement, partition dragging, wheel scrolling) |
 | **`Arrows`** | Move cursor in active pane (Up/Down scrolls both synchronously; Left/Right crosses panes) |
 | **`Tab`** | Switch focus between Accession Names pane and Sequence Grid |
 | **`[` / `]`** | Narrow / widen Accession Name pane width |
@@ -91,7 +90,7 @@ AligNano includes full SGR 1006 terminal mouse tracking:
 - **Drag Divider Partition**: Click and drag the vertical border (`|`) between accessions and sequences to smoothly resize panel widths in real-time.
 - **Mouse Wheel Scrolling**: Scroll the mouse wheel up/down to scroll vertically through sequences; horizontal scroll moves left/right across columns.
 - **ESC Menu Interaction**: Click directly on menu categories and actions, or click outside the menu box to dismiss it.
-- **Toggle Mouse Mode (`F2`)**: Press **`F2`** or select **`[ESC] > Display > Mouse Mode`** to toggle mouse capture on or off. You can also launch with `--no-mouse` or `--mouse`.
+- **Toggle Mouse Mode**: Toggle in the menu via **`[ESC] > Display > Mouse Mode`** (use `◄/►`, `Enter`, or click to toggle). You can also launch from the command line with `--no-mouse` or `--mouse`.
 - **Native Clipboard Copy**: When mouse mode is active, hold **`Shift`** (or **`Option`** on macOS) while dragging to select text using your terminal's native clipboard.
 
 ---

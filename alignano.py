@@ -186,7 +186,6 @@ def read_key():
                 "win_e0_74": "CTRL_RIGHT",
                 "win_e0_8d": "CTRL_UP",
                 "win_e0_91": "CTRL_DOWN",
-                "win_00_3c": "F2",
             }
             return win_map.get(code, "UNKNOWN")
 
@@ -313,9 +312,6 @@ def read_key():
                         "\x1bOB": "KEY_DOWN",
                         "\x1bOC": "KEY_RIGHT",
                         "\x1bOD": "KEY_LEFT",
-                        "\x1bOQ": "F2",
-                        "\x1b[12~": "F2",
-                        "\x1b[[B": "F2",
                     }
                     return unix_map.get(seq, "ESCAPE")
                 return "ESCAPE"
@@ -833,7 +829,7 @@ def get_modal_menu_structure(current_vis_mode, alignment_format, mouse_enabled=F
                 ("COLOR_AA", f"{radio_aa} Protein (ClustalX)", ""),
                 ("COLOR_DIFF", f"{radio_diff} DIFF (Variable Sites)", ""),
                 ("COLOR_MONO", f"{radio_mono} Monochrome", ""),
-                ("TOGGLE_MOUSE", f"Mouse Mode: < {'ON' if mouse_enabled else 'OFF'} >", "F2"),
+                ("TOGGLE_MOUSE", f"Mouse Mode: < {'ON' if mouse_enabled else 'OFF'} >", "◄/►"),
                 ("PANE_WIDEN", "Widen Accession Pane", "]"),
                 ("PANE_NARROW", "Narrow Accession Pane", "["),
                 ("PAGE_LEFT", "Page Sequences Left", ""),
@@ -1321,7 +1317,7 @@ def draw_screen(
         space_left = max(0, cols - 2 - len(display_msg))
         lines.append("|" + display_msg + " " * space_left + "|")
     else:
-        help_text = " [ESC] Menu   [F2] Mouse   [Tab] Pane   [Arrows] Move   [Ins] Ins/Ovr"
+        help_text = " [ESC] Menu   [Tab] Switch Pane   [Arrows] Navigate   [Ins] Insert/Overwrite"
         max_help_len = max(5, cols - 2)
         if len(help_text) > max_help_len:
             help_text = help_text[:max_help_len]
@@ -1518,14 +1514,6 @@ def run_modal_menu(
                 active_col = "cat"
             else:
                 return None, alignment_format, mouse_enabled  # Exit menu
-
-        elif key == "F2":
-            mouse_enabled = not mouse_enabled
-            if mouse_enabled:
-                enable_mouse_tracking()
-            else:
-                disable_mouse_tracking()
-            continue
 
         elif key == "KEY_UP":
             if active_col == "cat":
@@ -2089,18 +2077,6 @@ def run_editor(filepath, mouse_enabled=True):
                 prompt_input = prompt_input[:-1]
             elif isinstance(key, str) and len(key) == 1:
                 prompt_input += key
-            continue
-
-        # F2 key directly toggles mouse mode
-        if key == "F2":
-            mouse_enabled = not mouse_enabled
-            if mouse_enabled:
-                enable_mouse_tracking()
-                status_msg = "Mouse Mode ENABLED (Click cursor, drag partition, wheel scroll. Shift+Drag to copy text)"
-            else:
-                disable_mouse_tracking()
-                status_msg = "Mouse Mode DISABLED (Native terminal text selection restored)"
-            status_expiry = time.time() + 3.0
             continue
 
         # Mouse Event Handler
