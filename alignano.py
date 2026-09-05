@@ -1694,7 +1694,12 @@ def run_editor(filepath, mouse_enabled=True):
     move_mode = False
 
     mouse_dragging_divider = False
-    mouse_dragging_grid = False
+    mouse_dragging_seq_row = None
+    mouse_drag_start_row = None
+    mouse_drag_last_col = 0
+    mouse_drag_initial_headers = []
+    mouse_drag_initial_seqs = []
+    mouse_drag_moved = False
 
     history = StateHistory()
 
@@ -2095,13 +2100,19 @@ def run_editor(filepath, mouse_enabled=True):
                     target_row = row_offset + (m_row - 6)
                     if 0 <= target_row < num_seqs:
                         cursor_row = target_row
+                        mouse_dragging_seq_row = target_row
+                        mouse_drag_start_row = target_row
+                        mouse_drag_last_col = m_col
+                        mouse_drag_initial_headers = copy.deepcopy(headers)
+                        mouse_drag_initial_seqs = copy.deepcopy(sequences)
+                        mouse_drag_moved = False
+
                         if 2 <= m_col <= acc_width + 1:
                             active_pane = "acc"
                         elif m_col >= acc_width + 3 and m_col < cols:
                             active_pane = "seq"
                             target_col = col_offset + (m_col - (acc_width + 3))
                             cursor_col = max(0, min(seq_len - 1, target_col))
-                            mouse_dragging_grid = True
                     continue
                 # 3. Bottom bar click
                 elif m_row >= rows - 3:
@@ -2122,19 +2133,74 @@ def run_editor(filepath, mouse_enabled=True):
                     target_width = max(5, min(cols - 10, m_col - 2))
                     acc_width_delta = target_width - int(cols * 0.22)
                     continue
-                elif mouse_dragging_grid:
+                elif mouse_dragging_seq_row is not None:
+                    # 1. Horizontal scrolling / panning (Left / Right drag)
+                    delta_x = m_col - mouse_drag_last_col
+                    mouse_drag_last_col = m_col
+                    if delta_x != 0:
+                        # Moving mouse right (delta_x > 0) scrolls view left; moving left scrolls view right
+                        col_offset = max(0, min(max(0, seq_len - 5), col_offset - delta_x))
+                        cursor_col = max(0, min(max(0, seq_len - 1), cursor_col - delta_x))
+
+                    # 2. Vertical sequence reordering (Up / Down drag)
                     if 6 <= m_row < 6 + view_height:
-                        target_row = row_offset + (m_row - 6)
-                        if 0 <= target_row < num_seqs:
-                            cursor_row = target_row
-                    if m_col >= acc_width + 3 and m_col < cols:
-                        target_col = col_offset + (m_col - (acc_width + 3))
-                        cursor_col = max(0, min(seq_len - 1, target_col))
+                        hover_row = row_offset + (m_row - 6)
+                        if 0 <= hover_row < num_seqs and hover_row != mouse_dragging_seq_row:
+                            if not mouse_drag_moved:
+                                history.push_state(mouse_drag_initial_headers, mouse_drag_initial_seqs)
+                                mouse_drag_moved = True
+
+                            h = headers.pop(mouse_dragging_seq_row)
+                            s = sequences.pop(mouse_dragging_seq_row)
+                            headers.insert(hover_row, h)
+                            sequences.insert(hover_row, s)
+
+                            mouse_dragging_seq_row = hover_row
+                            cursor_row = hover_row
+                            modified = True
+                            status_msg = f"Moving row: '{headers[cursor_row]}' (Row {cursor_row + 1}/{num_seqs})"
+                            status_expiry = time.time() + 1.0
+
+                    # Edge auto-scrolling when dragging near top/bottom
+                    if m_row <= 6 and row_offset > 0:
+                        row_offset -= 1
+                        hover_row = max(0, mouse_dragging_seq_row - 1)
+                        if hover_row != mouse_dragging_seq_row:
+                            if not mouse_drag_moved:
+                                history.push_state(mouse_drag_initial_headers, mouse_drag_initial_seqs)
+                                mouse_drag_moved = True
+                            h = headers.pop(mouse_dragging_seq_row)
+                            s = sequences.pop(mouse_dragging_seq_row)
+                            headers.insert(hover_row, h)
+                            sequences.insert(hover_row, s)
+                            mouse_dragging_seq_row = hover_row
+                            cursor_row = hover_row
+                            modified = True
+                    elif m_row >= 5 + view_height and row_offset + view_height < num_seqs:
+                        row_offset += 1
+                        hover_row = min(num_seqs - 1, mouse_dragging_seq_row + 1)
+                        if hover_row != mouse_dragging_seq_row:
+                            if not mouse_drag_moved:
+                                history.push_state(mouse_drag_initial_headers, mouse_drag_initial_seqs)
+                                mouse_drag_moved = True
+                            h = headers.pop(mouse_dragging_seq_row)
+                            s = sequences.pop(mouse_dragging_seq_row)
+                            headers.insert(hover_row, h)
+                            sequences.insert(hover_row, s)
+                            mouse_dragging_seq_row = hover_row
+                            cursor_row = hover_row
+                            modified = True
                     continue
 
             elif m_event == "MOUSE_RELEASE":
+                if mouse_dragging_seq_row is not None:
+                    if mouse_drag_moved:
+                        status_msg = f"Sequence '{headers[cursor_row]}' moved to row {cursor_row + 1}. Press Ctrl+Z to undo."
+                        status_expiry = time.time() + 3.0
+                    mouse_dragging_seq_row = None
+                    mouse_drag_start_row = None
+                    mouse_drag_moved = False
                 mouse_dragging_divider = False
-                mouse_dragging_grid = False
                 continue
 
             elif m_event == "MOUSE_WHEEL_UP":

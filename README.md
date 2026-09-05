@@ -87,6 +87,9 @@ Press **`ESC`** at any time to open the side-by-side modal menu:
 
 AligNano includes full SGR 1006 terminal mouse tracking:
 - **Click to Focus / Place Cursor**: Click directly on any residue in the sequence grid or on any accession name in the left pane.
+- **Hold & Drag Sequences**:
+  - **Drag Up / Down**: Grabs and moves sequence rows to reorder them in real-time (with automatic edge scrolling and `Ctrl+Z` Undo support).
+  - **Drag Left / Right**: Smoothly scrolls and pans the alignment horizontally across columns.
 - **Drag Divider Partition**: Click and drag the vertical border (`|`) between accessions and sequences to smoothly resize panel widths in real-time.
 - **Mouse Wheel Scrolling**: Scroll the mouse wheel up/down to scroll vertically through sequences; horizontal scroll moves left/right across columns.
 - **ESC Menu Interaction**: Click directly on menu categories and actions, or click outside the menu box to dismiss it.
