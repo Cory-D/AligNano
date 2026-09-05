@@ -404,9 +404,9 @@ def fasta_to_a3m(sequences):
 
 
 def levenshtein_distance(s1, s2):
-    """Calculates Levenshtein distance between s1 and s2 (excluding gaps)."""
-    seq1 = s1.replace("-", "")
-    seq2 = s2.replace("-", "")
+    """Calculates Levenshtein distance between s1 and s2 (excluding gaps and dots, case-insensitive)."""
+    seq1 = s1.replace("-", "").replace(".", "").upper()
+    seq2 = s2.replace("-", "").replace(".", "").upper()
 
     if len(seq1) < len(seq2):
         return levenshtein_distance(seq2, seq1)
@@ -712,6 +712,153 @@ _diff_cache_state = None
 _diff_col_cache = {}
 
 
+def get_modal_menu_structure(current_vis_mode, alignment_format):
+    """Returns categorized menu items and shortcuts for the modal menu."""
+    radio_nuc = "(*)" if current_vis_mode == "nuc" else "( )"
+    radio_aa = "(*)" if current_vis_mode == "aa" else "( )"
+    radio_diff = "(*)" if current_vis_mode == "diff" else "( )"
+    radio_mono = "(*)" if current_vis_mode == "mono" else "( )"
+
+    categories = [
+        (
+            "File",
+            [
+                ("SAVE", "Save Alignment", "Ctrl+S"),
+                ("TOGGLE_FORMAT", f"Format: {alignment_format.upper()} (Toggle)", ""),
+                ("EXPORT_FREQ", "Export Frequencies (CSV)", ""),
+                ("HELP", "Help & Overview", "?"),
+                ("QUIT", "Quit Editor", "Ctrl+Q"),
+            ],
+        ),
+        (
+            "Edit",
+            [
+                ("UNDO", "Undo Last Action", "Ctrl+Z"),
+                ("REDO", "Redo Last Action", "Ctrl+Y"),
+                ("TOGGLE_INSERT", "Toggle Insert / Overwrite", "Insert"),
+                ("EDIT_NAME", "Rename Accession Header", ""),
+                ("ADD_ROW", "Add New Sequence Row", ""),
+                ("DELETE_ROW", "Delete Current Row", ""),
+                ("TOGGLE_MOVE", "Reorder / Move Sequence Row", ""),
+            ],
+        ),
+        (
+            "Display",
+            [
+                ("COLOR_NUC", f"{radio_nuc} DNA / RNA Mode", ""),
+                ("COLOR_AA", f"{radio_aa} Protein (ClustalX)", ""),
+                ("COLOR_DIFF", f"{radio_diff} DIFF (Variable Sites)", ""),
+                ("COLOR_MONO", f"{radio_mono} Monochrome", ""),
+                ("PANE_WIDEN", "Widen Accession Pane", "]"),
+                ("PANE_NARROW", "Narrow Accession Pane", "["),
+                ("PAGE_LEFT", "Page Sequences Left", ""),
+                ("PAGE_RIGHT", "Page Sequences Right", ""),
+            ],
+        ),
+        (
+            "Tools",
+            [
+                ("SEARCH", "Search Motif or Header", "Ctrl+F"),
+                ("FIND_NEXT", "Find Next Match", "Ctrl+J"),
+                ("TRANSLATE", "Translate DNA to Protein", ""),
+                ("SORT_DIST", "Sort by Levenshtein Dist", ""),
+            ],
+        ),
+    ]
+    return categories
+
+
+def build_modal_menu_lines(modal_state):
+    """Builds pre-formatted ANSI lines for the centered two-column modal menu."""
+    active_col = modal_state["active_col"]
+    cat_idx = modal_state["cat_idx"]
+    act_idx = modal_state["act_idx"]
+    categories = modal_state["categories"]
+
+    colors = get_theme_colors()
+    accent = colors["accent"]
+    gold = colors["gold"]
+    blue = colors["blue"]
+    bold = colors["bold"]
+    reset = colors["reset"]
+    dim = colors["dim"]
+    select_bg = colors["select_bg"]
+
+    inner_w = 68
+    cat_w = 20
+    act_w = 47
+
+    lines = []
+
+    # 1. Top border
+    title = " AligNano Main Menu "
+    pad_left = (inner_w - len(title)) // 2
+    pad_right = inner_w - pad_left - len(title)
+    top_line = f"{blue}┌{'─' * pad_left}{gold}{bold}{title}{reset}{blue}{'─' * pad_right}┐{reset}"
+    lines.append(top_line)
+
+    # 2. Header column titles
+    header_cat = f"  CATEGORIES".ljust(cat_w)
+    header_act = f"  ACTIONS".ljust(act_w)
+    hdr_line = f"{blue}│{gold}{bold}{header_cat}{reset}{blue}│{gold}{bold}{header_act}{reset}{blue}│{reset}"
+    lines.append(hdr_line)
+
+    # 3. Mid separator
+    mid_sep = f"{blue}├{'─' * cat_w}┼{'─' * act_w}┤{reset}"
+    lines.append(mid_sep)
+
+    # 4. Content rows (8 rows total to accommodate longest menu)
+    max_rows = 8
+    actions = categories[cat_idx][1]
+
+    for r in range(max_rows):
+        # Left column: Categories
+        if r < len(categories):
+            cat_num = r + 1
+            cat_name = categories[r][0]
+            if r == cat_idx:
+                if active_col == "cat":
+                    cat_cell = f"{select_bg} ► {cat_num}. {cat_name:<13} {reset}"
+                else:
+                    cat_cell = f"{accent}{bold} • {cat_num}. {cat_name:<13} {reset}"
+            else:
+                cat_cell = f"   {cat_num}. {cat_name:<13} "
+        else:
+            cat_cell = " " * cat_w
+
+        # Right column: Actions
+        if r < len(actions):
+            act_code, act_name, act_badge = actions[r]
+            badge_str = f"[{act_badge}]" if act_badge else ""
+            if r == act_idx:
+                if active_col == "act":
+                    act_cell = f"{select_bg} ► {act_name:<33} {badge_str:>8} {reset}"
+                else:
+                    act_cell = f"{gold}   {act_name:<33} {badge_str:>8} {reset}"
+            else:
+                act_cell = f"   {act_name:<33} {dim}{badge_str:>8}{reset} "
+        else:
+            act_cell = " " * act_w
+
+        lines.append(f"{blue}│{reset}{cat_cell}{blue}│{reset}{act_cell}{blue}│{reset}")
+
+    # 5. Bottom divider
+    bot_sep = f"{blue}├{'─' * inner_w}┤{reset}"
+    lines.append(bot_sep)
+
+    # 6. Hints line
+    hints = " [▲/▼] Move  [◄/►] Column  [Enter] Select  [1-4] Jump  [Esc] Back "
+    pad_h = max(0, inner_w - len(hints))
+    hints_line = f"{blue}│{dim}{hints}{' ' * pad_h}{reset}{blue}│{reset}"
+    lines.append(hints_line)
+
+    # 7. Bottom border
+    bot_line = f"{blue}└{'─' * inner_w}┘{reset}"
+    lines.append(bot_line)
+
+    return lines
+
+
 def draw_screen(
     headers,
     sequences,
@@ -733,6 +880,7 @@ def draw_screen(
     search_query="",
     search_matches=None,
     alignment_format="fasta",
+    modal_state=None,
 ):
     """Composes and renders the entire editor layout to stdout in a single write."""
     global _consensus_cache_state, _consensus_col_cache
@@ -746,8 +894,12 @@ def draw_screen(
     seq_width = cols - acc_width - 4
     view_height = rows - 10 if num_seqs > 0 else rows - 9
 
-    # Fast fingerprint to detect sequence list modifications
-    seq_state = (len(sequences), sum(id(s) for s in sequences))
+    # Fast fingerprint to detect sequence list modifications without id() recycling
+    seq_state = (
+        len(sequences),
+        tuple(len(s) for s in sequences),
+        sum(hash(s) for s in sequences),
+    )
     if _consensus_cache_state != seq_state:
         _consensus_cache_state = seq_state
         _consensus_col_cache = {}
@@ -1077,19 +1229,19 @@ def draw_screen(
         space_left = cols - 2 - len(status_msg)
         lines.append("|" + status_msg + " " * max(0, space_left) + "|")
     else:
-        help_text = " [Arrows] Move  [Tab] Swap  [Del] Del  [Ctrl+W] Sort  [Ctrl+V] Color  [Ctrl+P] Format"
+        help_text = " [ESC] Menu   [Tab] Switch Pane   [Arrows] Navigate   [Ins] Insert/Overwrite"
         space_left = cols - 2 - len(help_text)
         lines.append("|" + help_text + " " * max(0, space_left) + "|")
 
     # 7. Navigation shortcut help line
     if move_mode:
-        nav_text = " [Ctrl+T] Exit Move Mode"
+        nav_text = " [ESC] Exit Move Mode   [Arrows Up/Down] Move sequence"
     elif not prompt_mode:
         nav_text = (
-            " [Ctrl+H] Help  [Ctrl+E] Name  [Ctrl+F] Find  [Ctrl+G] Freq  [Ctrl+S] Save  [Ctrl+Q] Quit"
+            " [Ctrl+F] Search   [Ctrl+Z] Undo   [Ctrl+Y] Redo   [Ctrl+S] Save   [Ctrl+Q] Quit"
         )
     else:
-        nav_text = " [Enter] Confirm  [Escape] Cancel / Exit Prompt"
+        nav_text = " [Enter] Confirm   [Escape] Cancel / Exit Prompt"
     space_left = cols - 2 - len(nav_text)
     lines.append("|" + nav_text + " " * max(0, space_left) + "|")
 
@@ -1098,7 +1250,224 @@ def draw_screen(
 
     # Write full viewport starting at terminal home (0,0) without trailing newline to avoid scrolling
     sys.stdout.write("\x1b[H" + "\n".join(lines))
+
+    # If modal menu is active, overlay it directly at center coordinates
+    if modal_state:
+        modal_lines = build_modal_menu_lines(modal_state)
+        start_row = max(1, (rows - len(modal_lines)) // 2)
+        start_col = max(1, (cols - 70) // 2)
+        for idx, m_line in enumerate(modal_lines):
+            sys.stdout.write(f"\x1b[{start_row + idx + 1};{start_col + 1}H{m_line}")
+
     sys.stdout.flush()
+
+
+def run_modal_menu(
+    headers,
+    sequences,
+    cursor_row,
+    cursor_col,
+    row_offset,
+    col_offset,
+    active_pane,
+    filename,
+    insert_mode,
+    vis_mode,
+    modified,
+    acc_width,
+    alignment_format,
+):
+    """Interactive side-by-side modal dialog invoked by ESC."""
+    active_col = "cat"  # 'cat' (Categories) or 'act' (Actions)
+    cat_idx = 0
+    act_idx = 0
+
+    while True:
+        categories = get_modal_menu_structure(vis_mode, alignment_format)
+        if cat_idx < 0:
+            cat_idx = 0
+        if cat_idx >= len(categories):
+            cat_idx = len(categories) - 1
+
+        current_actions = categories[cat_idx][1]
+        if act_idx < 0:
+            act_idx = 0
+        if act_idx >= len(current_actions):
+            act_idx = len(current_actions) - 1
+
+        modal_state = {
+            "active_col": active_col,
+            "cat_idx": cat_idx,
+            "act_idx": act_idx,
+            "categories": categories,
+        }
+
+        # Draw alignment grid with centered modal menu overlay
+        draw_screen(
+            headers,
+            sequences,
+            cursor_row,
+            cursor_col,
+            row_offset,
+            col_offset,
+            active_pane,
+            filename,
+            insert_mode,
+            vis_mode,
+            modified,
+            acc_width,
+            status_msg="",
+            prompt_mode=None,
+            alignment_format=alignment_format,
+            modal_state=modal_state,
+        )
+
+        try:
+            key = read_key()
+        except TerminalResizeException:
+            sys.stdout.write("\x1b[2J")
+            sys.stdout.flush()
+            continue
+        except (KeyboardInterrupt, Exception):
+            return None
+
+        # Key handling inside modal menu
+        if key in ("\r", "\n", "ENTER", "FIND_NEXT"):
+            if active_col == "cat":
+                active_col = "act"
+                act_idx = 0
+            else:
+                return current_actions[act_idx][0]
+
+        elif key == "ESCAPE":
+            if active_col == "act":
+                active_col = "cat"
+            else:
+                return None  # Exit menu
+
+        elif key == "KEY_UP":
+            if active_col == "cat":
+                cat_idx = (cat_idx - 1) % len(categories)
+                act_idx = 0
+            else:
+                act_idx = (act_idx - 1) % len(current_actions)
+
+        elif key == "KEY_DOWN":
+            if active_col == "cat":
+                cat_idx = (cat_idx + 1) % len(categories)
+                act_idx = 0
+            else:
+                act_idx = (act_idx + 1) % len(current_actions)
+
+        elif key in ("KEY_RIGHT", "TAB"):
+            if active_col == "cat":
+                active_col = "act"
+                act_idx = 0
+            elif key == "TAB":
+                active_col = "cat"
+
+        elif key == "KEY_LEFT":
+            if active_col == "act":
+                active_col = "cat"
+
+        elif key in ("1", "2", "3", "4"):
+            idx = int(key) - 1
+            if 0 <= idx < len(categories):
+                cat_idx = idx
+                active_col = "act"
+                act_idx = 0
+
+        elif key == "QUIT" or key == "\x03":
+            return None
+
+
+def save_alignment_file(dest_file, alignment_format, headers, sequences):
+    """Saves headers and sequences according to chosen alignment format."""
+    if alignment_format in ("sto", "stockholm"):
+        save_stockholm(dest_file, headers, sequences)
+    elif alignment_format == "a3m":
+        save_seqs = fasta_to_a3m(sequences)
+        save_fasta(dest_file, headers, save_seqs)
+    else:
+        save_fasta(dest_file, headers, sequences)
+
+
+def export_frequency_tables(prefix, sequences, current_dir):
+    """Computes and writes 4 transposed frequency and count CSV matrices to freqs/."""
+    freqs_dir = os.path.join(current_dir, "freqs")
+    os.makedirs(freqs_dir, exist_ok=True)
+
+    target_counts_all = os.path.join(freqs_dir, prefix + "_counts_all.csv")
+    target_counts_changed = os.path.join(freqs_dir, prefix + "_counts_changed.csv")
+    target_freq_all = os.path.join(freqs_dir, prefix + "_frequencies_all.csv")
+    target_freq_changed = os.path.join(freqs_dir, prefix + "_frequencies_changed.csv")
+
+    num_seqs = len(sequences)
+    seq_len = len(sequences[0]) if num_seqs > 0 else 0
+
+    all_chars_set = set()
+    for seq in sequences:
+        for c in seq:
+            c_upper = c.upper()
+            if c_upper.isalnum() or c_upper == "-":
+                all_chars_set.add(c_upper)
+    all_chars = sorted(list(all_chars_set))
+
+    col_data_counts = {char: [] for char in all_chars}
+    col_data_freq = {char: [] for char in all_chars}
+    changed_col_indices = []
+
+    from collections import Counter
+    for col_idx in range(seq_len):
+        col_chars = [
+            sequences[r][col_idx].upper()
+            for r in range(num_seqs)
+            if col_idx < len(sequences[r])
+        ]
+        counts = Counter(col_chars)
+        for char in all_chars:
+            cnt = counts.get(char, 0)
+            freq = cnt / num_seqs if num_seqs > 0 else 0.0
+            col_data_counts[char].append(cnt)
+            col_data_freq[char].append(round(freq, 3))
+
+        if len(set(col_chars)) > 1:
+            changed_col_indices.append(col_idx)
+
+    csv_headers_all = ["Character"] + [str(col_idx + 1) for col_idx in range(seq_len)]
+    csv_headers_changed = ["Character"] + [str(idx + 1) for idx in changed_col_indices]
+
+    counts_all_rows = []
+    counts_changed_rows = []
+    freq_all_rows = []
+    freq_changed_rows = []
+
+    for char in all_chars:
+        counts_all_rows.append([char] + col_data_counts[char])
+        freq_all_rows.append([char] + col_data_freq[char])
+        counts_changed_rows.append([char] + [col_data_counts[char][idx] for idx in changed_col_indices])
+        freq_changed_rows.append([char] + [col_data_freq[char][idx] for idx in changed_col_indices])
+
+    import csv
+    with open(target_counts_all, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(csv_headers_all)
+        writer.writerows(counts_all_rows)
+
+    with open(target_counts_changed, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(csv_headers_changed)
+        writer.writerows(counts_changed_rows)
+
+    with open(target_freq_all, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(csv_headers_all)
+        writer.writerows(freq_all_rows)
+
+    with open(target_freq_changed, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(csv_headers_changed)
+        writer.writerows(freq_changed_rows)
 
 
 # ==============================================================================
@@ -1121,7 +1490,7 @@ def run_editor(filepath):
     col_offset = 0
 
     active_pane = "seq"  # 'acc' or 'seq'
-    insert_mode = False  # False = Overwrite, True = Insert
+    insert_mode = True  # True = Insert, False = Overwrite (default to Insert for safety)
     if not supports_256_colors():
         vis_mode = "mono"
     else:
@@ -1143,6 +1512,8 @@ def run_editor(filepath):
     prompt_text = ""
     prompt_input = ""
     pending_frame = "+1"
+    pending_save_file = ""
+    pending_export_prefix = ""
 
     search_query = ""
     search_matches = []
@@ -1258,14 +1629,19 @@ def run_editor(filepath):
                 prompt_input = ""
                 status_msg = "Command cancelled."
                 status_expiry = time.time() + 2.0
-            elif key == "ENTER":
+            elif key in ("ENTER", "FIND_NEXT"):
                 # Process confirmation/string
                 if prompt_mode == "edit_name":
                     if prompt_input.strip():
                         history.push_state(headers, sequences)
-                        headers[cursor_row] = prompt_input.strip()
+                        new_name = prompt_input.strip()
+                        if alignment_format in ("sto", "stockholm") and " " in new_name:
+                            new_name = new_name.replace(" ", "_")
+                            status_msg = "Accession name updated (spaces replaced with '_' for Stockholm format)."
+                        else:
+                            status_msg = "Accession name updated."
+                        headers[cursor_row] = new_name
                         modified = True
-                        status_msg = "Accession name updated."
                     prompt_mode = None
                     prompt_input = ""
                 elif prompt_mode == "save_file":
@@ -1284,173 +1660,96 @@ def run_editor(filepath):
                         if not dest_abs.startswith(current_dir):
                             status_msg = "Error: Access denied (sandbox policy: AligNano folder only)."
                             status_expiry = time.time() + 4.0
+                            prompt_mode = None
+                            prompt_input = ""
+                        elif os.path.exists(dest_abs):
+                            # Overwrite protection / confirmation
+                            pending_save_file = dest_file
+                            prompt_mode = "save_overwrite_confirm"
+                            prompt_text = f"File '{os.path.basename(dest_file)}' already exists! Overwrite? (y/N): "
+                            prompt_input = ""
                         else:
                             try:
-                                if alignment_format in ("sto", "stockholm"):
-                                    save_stockholm(dest_file, headers, sequences)
-                                elif alignment_format == "a3m":
-                                    save_seqs = fasta_to_a3m(sequences)
-                                    save_fasta(dest_file, headers, save_seqs)
-                                else:
-                                    save_fasta(dest_file, headers, sequences)
+                                save_alignment_file(dest_file, alignment_format, headers, sequences)
                                 filename = dest_file
                                 modified = False
                                 status_msg = f"Alignment successfully saved to: {os.path.basename(dest_file)}"
                             except Exception as e:
                                 status_msg = f"Save failed: {str(e)}"
                             status_expiry = time.time() + 3.0
+                            prompt_mode = None
+                            prompt_input = ""
+                    else:
+                        prompt_mode = None
+                        prompt_input = ""
+
+                elif prompt_mode == "save_overwrite_confirm":
+                    if prompt_input.strip().upper().startswith("Y"):
+                        dest_file = pending_save_file
+                        try:
+                            save_alignment_file(dest_file, alignment_format, headers, sequences)
+                            filename = dest_file
+                            modified = False
+                            status_msg = f"File '{os.path.basename(dest_file)}' overwritten and saved successfully."
+                        except Exception as e:
+                            status_msg = f"Save failed: {str(e)}"
+                        status_expiry = time.time() + 3.0
+                    else:
+                        status_msg = "Save cancelled (existing file protected)."
+                        status_expiry = time.time() + 2.0
                     prompt_mode = None
                     prompt_input = ""
+                    pending_save_file = ""
+
                 elif prompt_mode == "export_freq":
                     prefix = (
                         prompt_input.strip() if prompt_input.strip() else "frequencies"
                     )
-
                     current_dir = os.path.abspath(os.getcwd())
                     freqs_dir = os.path.join(current_dir, "freqs")
-
-                    # Compute output filenames inside 'freqs' subdirectory
-                    counts_all_path = os.path.join(
-                        freqs_dir, prefix + "_counts_all.csv"
-                    )
-                    counts_changed_path = os.path.join(
-                        freqs_dir, prefix + "_counts_changed.csv"
-                    )
-                    freq_all_path = os.path.join(
-                        freqs_dir, prefix + "_frequencies_all.csv"
-                    )
-                    freq_changed_path = os.path.join(
-                        freqs_dir, prefix + "_frequencies_changed.csv"
-                    )
-
-                    target_counts_all = os.path.abspath(counts_all_path)
-                    target_counts_changed = os.path.abspath(counts_changed_path)
-                    target_freq_all = os.path.abspath(freq_all_path)
-                    target_freq_changed = os.path.abspath(freq_changed_path)
-
                     paths = [
-                        target_counts_all,
-                        target_counts_changed,
-                        target_freq_all,
-                        target_freq_changed,
+                        os.path.join(freqs_dir, prefix + "_counts_all.csv"),
+                        os.path.join(freqs_dir, prefix + "_counts_changed.csv"),
+                        os.path.join(freqs_dir, prefix + "_frequencies_all.csv"),
+                        os.path.join(freqs_dir, prefix + "_frequencies_changed.csv"),
                     ]
-
-                    if any(not p.startswith(current_dir) for p in paths):
+                    if any(not os.path.abspath(p).startswith(current_dir) for p in paths):
                         status_msg = "Error: Access denied (sandbox policy: AligNano folder only)."
                         status_expiry = time.time() + 4.0
+                        prompt_mode = None
+                        prompt_input = ""
+                    elif any(os.path.exists(p) for p in paths):
+                        # Overwrite protection / confirmation
+                        pending_export_prefix = prefix
+                        prompt_mode = "export_overwrite_confirm"
+                        prompt_text = f"CSV files for '{prefix}' exist in freqs/. Overwrite? (y/N): "
+                        prompt_input = ""
                     else:
                         try:
-                            # Ensure subdirectory exists
-                            os.makedirs(freqs_dir, exist_ok=True)
-                            num_seqs = len(sequences)
-                            seq_len = len(sequences[0]) if num_seqs > 0 else 0
-
-                            # Dynamically build standard set of unique characters (alphanumeric and gaps)
-                            all_chars_set = set()
-                            for seq in sequences:
-                                for c in seq:
-                                    c_upper = c.upper()
-                                    if c_upper.isalnum() or c_upper == "-":
-                                        all_chars_set.add(c_upper)
-                            all_chars = sorted(list(all_chars_set))
-
-                            # Precompute counts and frequencies for all columns
-                            col_data_counts = {char: [] for char in all_chars}
-                            col_data_freq = {char: [] for char in all_chars}
-                            changed_col_indices = []
-
-                            for col_idx in range(seq_len):
-                                col_chars = [
-                                    sequences[r][col_idx].upper()
-                                    for r in range(num_seqs)
-                                    if col_idx < len(sequences[r])
-                                ]
-                                from collections import Counter
-
-                                counts = Counter(col_chars)
-
-                                for char in all_chars:
-                                    cnt = counts.get(char, 0)
-                                    freq = cnt / num_seqs if num_seqs > 0 else 0.0
-                                    col_data_counts[char].append(cnt)
-                                    col_data_freq[char].append(round(freq, 3))
-
-                                if len(set(col_chars)) > 1:
-                                    changed_col_indices.append(col_idx)
-
-                            # CSV Headers (Transposed: Characters on left, 1-indexed positions as columns)
-                            csv_headers_all = ["Character"] + [
-                                str(col_idx + 1) for col_idx in range(seq_len)
-                            ]
-                            csv_headers_changed = ["Character"] + [
-                                str(idx + 1) for idx in changed_col_indices
-                            ]
-
-                            counts_all_rows = []
-                            counts_changed_rows = []
-                            freq_all_rows = []
-                            freq_changed_rows = []
-
-                            for char in all_chars:
-                                counts_all_rows.append([char] + col_data_counts[char])
-                                freq_all_rows.append([char] + col_data_freq[char])
-
-                                counts_changed_rows.append(
-                                    [char]
-                                    + [
-                                        col_data_counts[char][idx]
-                                        for idx in changed_col_indices
-                                    ]
-                                )
-                                freq_changed_rows.append(
-                                    [char]
-                                    + [
-                                        col_data_freq[char][idx]
-                                        for idx in changed_col_indices
-                                    ]
-                                )
-
-                            # Write counts_all
-                            import csv
-
-                            with open(
-                                target_counts_all, "w", newline="", encoding="utf-8"
-                            ) as f:
-                                writer = csv.writer(f)
-                                writer.writerow(csv_headers_all)
-                                writer.writerows(counts_all_rows)
-
-                            # Write counts_changed
-                            with open(
-                                target_counts_changed, "w", newline="", encoding="utf-8"
-                            ) as f:
-                                writer = csv.writer(f)
-                                writer.writerow(csv_headers_changed)
-                                writer.writerows(counts_changed_rows)
-
-                            # Write frequencies_all
-                            with open(
-                                target_freq_all, "w", newline="", encoding="utf-8"
-                            ) as f:
-                                writer = csv.writer(f)
-                                writer.writerow(csv_headers_all)
-                                writer.writerows(freq_all_rows)
-
-                            # Write frequencies_changed
-                            with open(
-                                target_freq_changed, "w", newline="", encoding="utf-8"
-                            ) as f:
-                                writer = csv.writer(f)
-                                writer.writerow(csv_headers_changed)
-                                writer.writerows(freq_changed_rows)
-
-                            status_msg = f"Exported 4 CSVs to 'freqs/' subdirectory."
-                            status_expiry = time.time() + 3.0
+                            export_frequency_tables(prefix, sequences, current_dir)
+                            status_msg = f"Exported 4 CSVs for '{prefix}' to freqs/ subdirectory."
                         except Exception as e:
                             status_msg = f"Export failed: {str(e)}"
-                            status_expiry = time.time() + 3.0
+                        status_expiry = time.time() + 3.0
+                        prompt_mode = None
+                        prompt_input = ""
+
+                elif prompt_mode == "export_overwrite_confirm":
+                    if prompt_input.strip().upper().startswith("Y"):
+                        prefix = pending_export_prefix
+                        current_dir = os.path.abspath(os.getcwd())
+                        try:
+                            export_frequency_tables(prefix, sequences, current_dir)
+                            status_msg = f"Overwrote and exported 4 CSVs for '{prefix}' to freqs/."
+                        except Exception as e:
+                            status_msg = f"Export failed: {str(e)}"
+                        status_expiry = time.time() + 3.0
+                    else:
+                        status_msg = "Export cancelled (existing CSV files protected)."
+                        status_expiry = time.time() + 2.0
                     prompt_mode = None
                     prompt_input = ""
+                    pending_export_prefix = ""
                 elif prompt_mode == "translate_frame":
                     val = prompt_input.strip()
                     if not val:
@@ -1577,16 +1876,198 @@ def run_editor(filepath):
                 prompt_input += key
             continue
 
-        # Normal command controls
-        is_cmd_mode = active_pane == "acc"
+        # Main ESC Modal Menu Handler
+        if key == "ESCAPE":
+            action = run_modal_menu(
+                headers,
+                sequences,
+                cursor_row,
+                cursor_col,
+                row_offset,
+                col_offset,
+                active_pane,
+                filename,
+                insert_mode,
+                vis_mode,
+                modified,
+                acc_width,
+                alignment_format,
+            )
+            if not action:
+                continue
 
-        if key == "HELP" or key == "?" or (is_cmd_mode and key in ("H", "h")):
-            display_help_screen()
-            sys.stdout.write("\x1b[2J")
-            sys.stdout.flush()
+            # Process modal menu action
+            if action == "SAVE":
+                prompt_mode = "save_file"
+                prompt_text = "Save as (FASTA/A3M/STO path): "
+                prompt_input = filename if filename else "alignment.fasta"
+
+            elif action == "TOGGLE_FORMAT":
+                if alignment_format == "fasta":
+                    alignment_format = "a3m"
+                elif alignment_format == "a3m":
+                    alignment_format = "sto"
+                else:
+                    alignment_format = "fasta"
+                status_msg = f"Alignment Format toggled to: {alignment_format.upper()}"
+                status_expiry = time.time() + 2.0
+
+            elif action == "EXPORT_FREQ":
+                prompt_mode = "export_freq"
+                prompt_text = "Export prefix: "
+                if filename:
+                    base_name = os.path.splitext(os.path.basename(filename))[0]
+                else:
+                    base_name = "frequencies"
+                prompt_input = base_name
+
+            elif action == "HELP":
+                display_help_screen()
+                sys.stdout.write("\x1b[2J")
+                sys.stdout.flush()
+
+            elif action == "QUIT":
+                if modified:
+                    prompt_mode = "quit_confirm"
+                    prompt_text = "Unsaved changes! Quit anyway? (y/N): "
+                    prompt_input = ""
+                else:
+                    break
+
+            elif action == "UNDO":
+                restored = history.undo(headers, sequences)
+                if restored:
+                    headers, sequences = restored
+                    modified = True
+                    vis_mode = detect_vis_mode(sequences)
+                    status_msg = "Action Undone."
+                else:
+                    status_msg = "Nothing to undo."
+                status_expiry = time.time() + 2.0
+
+            elif action == "REDO":
+                restored = history.redo(headers, sequences)
+                if restored:
+                    headers, sequences = restored
+                    modified = True
+                    vis_mode = detect_vis_mode(sequences)
+                    status_msg = "Action Redone."
+                else:
+                    status_msg = "Nothing to redo."
+                status_expiry = time.time() + 2.0
+
+            elif action == "TOGGLE_INSERT":
+                insert_mode = not insert_mode
+                status_msg = f"Edit Mode: {'INSERT' if insert_mode else 'OVERWRITE'}"
+                status_expiry = time.time() + 2.0
+
+            elif action == "EDIT_NAME":
+                prompt_mode = "edit_name"
+                prompt_text = "Enter accession name: "
+                prompt_input = headers[cursor_row]
+
+            elif action == "ADD_ROW":
+                prompt_mode = "add_seq"
+                prompt_text = "New sequence name (default Seq_N): "
+                prompt_input = ""
+
+            elif action == "DELETE_ROW":
+                if num_seqs <= 1:
+                    status_msg = "Cannot delete the last remaining sequence."
+                    status_expiry = time.time() + 2.0
+                else:
+                    prompt_mode = "delete_confirm"
+                    prompt_text = f"Delete sequence row '{headers[cursor_row]}'? (y/N): "
+                    prompt_input = ""
+
+            elif action == "TOGGLE_MOVE":
+                move_mode = True
+                status_msg = "Entered Move Mode (Use Up/Down arrows to reorder, ESC to exit)"
+                status_expiry = time.time() + 3.0
+
+            elif action == "COLOR_NUC":
+                vis_mode = "nuc"
+                status_msg = "Visual Mode: DNA/RNA"
+                status_expiry = time.time() + 2.0
+
+            elif action == "COLOR_AA":
+                vis_mode = "aa"
+                status_msg = "Visual Mode: PROTEIN (ClustalX)"
+                status_expiry = time.time() + 2.0
+
+            elif action == "COLOR_DIFF":
+                vis_mode = "diff"
+                status_msg = "Visual Mode: DIFF (Variable sites only)"
+                status_expiry = time.time() + 2.0
+
+            elif action == "COLOR_MONO":
+                vis_mode = "mono"
+                status_msg = "Visual Mode: MONOCHROME"
+                status_expiry = time.time() + 2.0
+
+            elif action == "PANE_WIDEN":
+                acc_width_delta += 2
+                status_msg = "Accession panel widened."
+                status_expiry = time.time() + 1.0
+
+            elif action == "PANE_NARROW":
+                acc_width_delta -= 2
+                status_msg = "Accession panel narrowed."
+                status_expiry = time.time() + 1.0
+
+            elif action == "PAGE_LEFT":
+                cursor_col = max(0, cursor_col - (seq_width - 5))
+
+            elif action == "PAGE_RIGHT":
+                cursor_col = min(seq_len - 1, cursor_col + (seq_width - 5))
+
+            elif action == "SEARCH":
+                prompt_mode = "search"
+                prompt_text = "Search motif/name: "
+                prompt_input = ""
+
+            elif action == "FIND_NEXT":
+                if search_query and search_matches:
+                    search_match_idx = (search_match_idx + 1) % len(search_matches)
+                    r, c, pane = search_matches[search_match_idx]
+                    cursor_row = r
+                    cursor_col = c
+                    active_pane = pane
+                    status_msg = f"Match {search_match_idx + 1}/{len(search_matches)}: Row {r + 1}, Col {c + 1}"
+                else:
+                    status_msg = "No active search. Press [ESC] -> Tools -> Search or Ctrl+F."
+                status_expiry = time.time() + 2.0
+
+            elif action == "TRANSLATE":
+                prompt_mode = "translate_frame"
+                prompt_text = "Select Reading Frame (+1, +2, +3, -1, -2, -3) [default: +1]: "
+                prompt_input = ""
+
+            elif action == "SORT_DIST":
+                if num_seqs <= 1:
+                    status_msg = "Nothing to sort."
+                else:
+                    history.push_state(headers, sequences)
+                    ref_seq = sequences[0]
+                    sub_rows = []
+                    for h, s in zip(headers[1:], sequences[1:]):
+                        dist = levenshtein_distance(ref_seq, s)
+                        sub_rows.append((h, s, dist))
+                    sub_rows.sort(key=lambda x: x[2])
+                    headers = [headers[0]] + [item[0] for item in sub_rows]
+                    sequences = [sequences[0]] + [item[1] for item in sub_rows]
+                    modified = True
+                    status_msg = "Sequences sorted by distance to top sequence. Press Ctrl+Z to undo."
+                status_expiry = time.time() + 3.0
             continue
 
-        elif key == "QUIT" or (is_cmd_mode and key in ("Q", "q")):
+        # Reserved Direct Shortcuts
+        elif key == "SAVE":
+            prompt_mode = "save_file"
+            prompt_text = "Save as (FASTA file path): "
+            prompt_input = filename if filename else "alignment.fasta"
+
+        elif key == "QUIT":
             if modified:
                 prompt_mode = "quit_confirm"
                 prompt_text = "Unsaved changes! Quit anyway? (y/N): "
@@ -1611,6 +2092,34 @@ def run_editor(filepath):
                 status_msg = "No active search. Press Ctrl+F to search."
             status_expiry = time.time() + 2.0
 
+        elif key == "UNDO":
+            restored = history.undo(headers, sequences)
+            if restored:
+                headers, sequences = restored
+                modified = True
+                vis_mode = detect_vis_mode(sequences)
+                status_msg = "Action Undone."
+            else:
+                status_msg = "Nothing to undo."
+            status_expiry = time.time() + 2.0
+
+        elif key == "REDO":
+            restored = history.redo(headers, sequences)
+            if restored:
+                headers, sequences = restored
+                modified = True
+                vis_mode = detect_vis_mode(sequences)
+                status_msg = "Action Redone."
+            else:
+                status_msg = "Nothing to redo."
+            status_expiry = time.time() + 2.0
+
+        elif key in ("HELP", "?"):
+            display_help_screen()
+            sys.stdout.write("\x1b[2J")
+            sys.stdout.flush()
+            continue
+
         elif key == "KEY_UP":
             cursor_row -= 1
         elif key == "KEY_DOWN":
@@ -1632,29 +2141,10 @@ def run_editor(filepath):
             else:
                 cursor_col += 1
 
-        # Scrolling Pages
         elif key == "PAGE_UP":
-            # Page up sequences/accessions (rows)
             cursor_row = max(0, cursor_row - (view_height - 2))
         elif key == "PAGE_DOWN":
-            # Page down sequences/accessions (rows)
             cursor_row = min(num_seqs - 1, cursor_row + (view_height - 2))
-        elif key == "PAGE_LEFT":
-            # Page sequence left (columns)
-            cursor_col = max(0, cursor_col - (seq_width - 5))
-        elif key == "PAGE_RIGHT":
-            # Page sequence right (columns)
-            cursor_col = min(seq_len - 1, cursor_col + (seq_width - 5))
-
-        elif key == "TRANSLATE" or (is_cmd_mode and key in ("T", "t")):
-            prompt_mode = "translate_frame"
-            prompt_text = "Select Reading Frame (+1, +2, +3, -1, -2, -3) [default: +1]: "
-            prompt_input = ""
-
-        elif key == "TOGGLE_MOVE" or (is_cmd_mode and key in ("M", "m")):
-            move_mode = True
-            status_msg = "Entered Move Mode (Use Up/Down arrows to move sequence)"
-            status_expiry = time.time() + 3.0
 
         elif key == "[":
             acc_width_delta -= 1
@@ -1666,128 +2156,15 @@ def run_editor(filepath):
             status_expiry = time.time() + 1.0
 
         elif key == "TAB":
-            # Switch pane focus
             active_pane = "seq" if active_pane == "acc" else "acc"
 
         elif key == "INSERT":
-            # Toggle edit mode
             insert_mode = not insert_mode
             status_msg = f"Edit Mode: {'INSERT' if insert_mode else 'OVERWRITE'}"
             status_expiry = time.time() + 2.0
 
-        elif key == "CYCLE_COLORS" or (is_cmd_mode and key in ("V", "v")):
-            # Toggle visualization mode
-            if not supports_256_colors():
-                vis_mode = "mono"
-                status_msg = "Visual Mode: MONOCHROME (256-color not supported)"
-            else:
-                if vis_mode == "nuc":
-                    vis_mode = "aa"
-                    status_msg = "Visual Mode: PROTEIN (ClustalX)"
-                elif vis_mode == "aa":
-                    vis_mode = "diff"
-                    status_msg = "Visual Mode: DIFF (Only highlight variable sites)"
-                elif vis_mode == "diff":
-                    vis_mode = "mono"
-                    status_msg = "Visual Mode: MONOCHROME"
-                else:
-                    vis_mode = "nuc"
-                    status_msg = "Visual Mode: DNA/RNA"
-            status_expiry = time.time() + 2.0
-
-        elif key == "TOGGLE_FORMAT" or (is_cmd_mode and key in ("P", "p")):
-            if alignment_format == "fasta":
-                alignment_format = "a3m"
-            elif alignment_format == "a3m":
-                alignment_format = "sto"
-            else:
-                alignment_format = "fasta"
-            status_msg = f"Alignment Format toggled to: {alignment_format.upper()}"
-            status_expiry = time.time() + 2.0
-
-        elif key == "SORT_DIST" or (is_cmd_mode and key in ("C", "c")):
-            if num_seqs <= 1:
-                status_msg = "Nothing to sort."
-            else:
-                history.push_state(headers, sequences)
-                ref_seq = sequences[0]
-
-                sub_rows = []
-                for h, s in zip(headers[1:], sequences[1:]):
-                    dist = levenshtein_distance(ref_seq, s)
-                    sub_rows.append((h, s, dist))
-
-                # Sort ascending by Levenshtein distance
-                sub_rows.sort(key=lambda x: x[2])
-
-                # Reconstruct
-                headers = [headers[0]] + [item[0] for item in sub_rows]
-                sequences = [sequences[0]] + [item[1] for item in sub_rows]
-                modified = True
-                status_msg = "Sequences sorted by Levenshtein distance to top sequence. Press Ctrl+Z to undo."
-            status_expiry = time.time() + 3.0
-
-        elif key == "UNDO" or (is_cmd_mode and key in ("U", "u")):
-            restored = history.undo(headers, sequences)
-            if restored:
-                headers, sequences = restored
-                modified = True
-                status_msg = "Action Undone."
-            else:
-                status_msg = "Nothing to undo."
-            status_expiry = time.time() + 2.0
-
-        elif key == "REDO" or (is_cmd_mode and key in ("Y", "y")):
-            restored = history.redo(headers, sequences)
-            if restored:
-                headers, sequences = restored
-                modified = True
-                status_msg = "Action Redone."
-            else:
-                status_msg = "Nothing to redo."
-            status_expiry = time.time() + 2.0
-
-        elif key == "EDIT_NAME" or (is_cmd_mode and key in ("E", "e")):
-            # Edit name
-            prompt_mode = "edit_name"
-            prompt_text = "Enter accession name: "
-            prompt_input = headers[cursor_row]
-
-        elif key == "ADD_ROW" or (is_cmd_mode and key in ("A", "a", "N", "n")):
-            # Add new row
-            prompt_mode = "add_seq"
-            prompt_text = "New sequence name (default Seq_N): "
-            prompt_input = ""
-
-        elif key == "DELETE_ROW" or (is_cmd_mode and key in ("X", "x")):
-            # Delete current row
-            if num_seqs <= 1:
-                status_msg = "Cannot delete the last remaining sequence."
-                status_expiry = time.time() + 2.0
-            else:
-                prompt_mode = "delete_confirm"
-                prompt_text = f"Delete sequence row '{headers[cursor_row]}'? (y/N): "
-                prompt_input = ""
-
-        elif key == "SAVE" or (is_cmd_mode and key in ("S", "s")):
-            # Save Alignment
-            prompt_mode = "save_file"
-            prompt_text = "Save as (FASTA file path): "
-            prompt_input = filename
-
-        elif key == "EXPORT_FREQ" or (is_cmd_mode and key in ("G", "g")):
-            # Export frequencies
-            prompt_mode = "export_freq"
-            prompt_text = "Export prefix: "
-            if filename:
-                base_name = os.path.splitext(os.path.basename(filename))[0]
-            else:
-                base_name = "frequencies"
-            prompt_input = base_name
-
-        elif key == "DELETE" or (is_cmd_mode and key in ("D", "d")):
+        elif key == "DELETE":
             if active_pane == "acc":
-                # Delete current sequence row immediately (with undo capability)
                 if num_seqs <= 1:
                     status_msg = "Cannot delete the last remaining sequence."
                     status_expiry = time.time() + 2.0
@@ -1798,12 +2175,9 @@ def run_editor(filepath):
                     modified = True
                     if cursor_row >= len(sequences):
                         cursor_row = max(0, len(sequences) - 1)
-                    status_msg = (
-                        f"Deleted sequence '{deleted_name}'. Press Ctrl+Z to undo."
-                    )
+                    status_msg = f"Deleted sequence '{deleted_name}'. Press Ctrl+Z to undo."
                     status_expiry = time.time() + 3.0
             else:
-                # Delete character to the left of the cursor and shorten sequence
                 if cursor_col > 0:
                     history.push_state(headers, sequences)
                     current_seq = sequences[cursor_row]
@@ -1901,39 +2275,50 @@ def display_help_screen():
         
         # Section titles and keys
         help_data = [
-            ("NAVIGATION & SCROLLING", [
-                ("Arrows (Up/Down)", "Move cursor cell-by-cell vertically"),
-                ("Arrows (Left/Right)", "Move cursor cell-by-cell horizontally (crosses panes)"),
-                ("Tab", "Switch pane focus between Accession Names & Sequence Grid"),
-                ("Ctrl+L", "Page sequence view left (scrolls by screen width - 5)"),
-                ("Ctrl+R", "Page sequence view right (scrolls by screen width - 5)"),
-                ("Page Up / Ctrl+U", "Page up sequences vertically"),
-                ("Page Down / Ctrl+D", "Page down sequences vertically"),
-                ("[ / ]", "Decrease / Increase the Accession name column width"),
+            ("ESC MAIN MENU SYSTEM", [
+                ("ESC", "Open AligNano Main Menu (File, Edit, Display, Tools)"),
+                ("Arrows (Up/Down)", "Move cursor across categories or actions"),
+                ("Arrows (Left/Right)", "Switch between Categories and Actions columns"),
+                ("Enter", "Select focused action or open action column"),
+                ("1, 2, 3, 4", "Directly jump to category (File, Edit, Display, Tools)"),
+                ("ESC", "Return from Actions to Categories, or close menu"),
+            ]),
+            ("RESERVED SHORTCUTS", [
+                ("Ctrl+S", "Save current alignment to FASTA/A3M/STO file"),
+                ("Ctrl+Q", "Quit alignment editor (checks for unsaved changes)"),
+                ("Ctrl+Z", "Undo last editing action (history restored)"),
+                ("Ctrl+Y", "Redo last undone action"),
+                ("Ctrl+F", "Search motif or accession name"),
+                ("Ctrl+J", "Jump to next search match"),
+                ("?", "Open / Close this interactive Help viewer"),
+                ("Tab", "Switch focus between Accession Names & Sequence Grid"),
+                ("[ / ]", "Decrease / Increase Accession column width"),
             ]),
             ("GRID & SEQUENCE EDITING", [
                 ("Insert", "Toggle Edit Mode: INSERT (insert base/gap) vs OVERWRITE"),
-                ("A-Z, a-z, 0-9", "Insert or overwrite character (advances cursor right)"),
+                ("A-Z, a-z, 0-9", "Insert or overwrite residue at cursor"),
                 ("Space / -", "Insert or overwrite gap character '-' at cursor"),
-                ("Backspace / Delete", "Sequence grid: Delete base left of cursor (sequence shortens)"),
-                ("Ctrl+K / Ctrl+X", "Accession pane: Delete current sequence row (immediate)"),
-                ("Ctrl+A / Ctrl+N", "Accession pane: Add a new sequence row"),
-                ("Ctrl+E", "Accession pane: Rename current sequence row"),
-                ("Ctrl+Z", "Undo last editing action (history state restored)"),
-                ("Ctrl+Y", "Redo last undone action"),
+                ("Backspace / Delete", "Sequence Grid: delete residue left of cursor"),
+                ("Delete", "Accession Pane: delete highlighted sequence row (undoable)"),
+                ("Page Up / Page Down", "Scroll sequences vertically by screen page"),
             ]),
-            ("EDITOR COMMANDS", [
-                ("Ctrl+F", "Search motif or accession name"),
-                ("Ctrl+T", "Translate DNA alignment to Protein (frame & genetic code)"),
-                ("Ctrl+B / M", "Toggle Move Mode (use Up/Down arrows to reorder sequence)"),
-                ("Ctrl+W", "Sort all sequences by Levenshtein distance to top sequence"),
-                ("Ctrl+V", "Cycle color scheme (DNA/RNA -> Protein -> Diff -> Mono)"),
-                ("Ctrl+P", "Toggle alignment format (FASTA -> A3M -> STO)"),
-                ("Ctrl+G", "Export column consensus frequencies to CSV files"),
-                ("Ctrl+S", "Save current alignment to FASTA/A3M/STO file"),
-                ("Ctrl+Q", "Quit alignment editor (checks for unsaved changes)"),
-                ("Ctrl+H / ?", "Toggle this interactive Help viewer"),
-            ])
+            ("MENU: FILE & DISPLAY", [
+                ("ESC > File > Format", "Toggle alignment format: FASTA <-> A3M <-> STO"),
+                ("ESC > File > Export", "Export column consensus frequencies to CSV"),
+                ("ESC > Display > Scheme", "Directly select Color Scheme:"),
+                ("  * DNA / RNA", "Standard 4-color nucleotide scheme (A, C, G, T/U)"),
+                ("  * Protein", "ClustalX chemical property colors for amino acids"),
+                ("  * DIFF", "Highlight variable polymorphic sites only"),
+                ("  * Monochrome", "High-contrast monochrome scheme"),
+            ]),
+            ("MENU: TOOLS & BIOINFORMATICS", [
+                ("ESC > Tools > Translate", "Translate DNA to Protein (frames +1..+3, -1..-3)"),
+                ("  * NCBI Codon Tables", "26 genetic code tables supported"),
+                ("ESC > Tools > Sort", "Cluster / Sort sequences by Levenshtein distance"),
+                ("ESC > Edit > Reorder", "Enter Move Mode to reorder rows with Up/Down arrows"),
+                ("ESC > Edit > Add Row", "Add new sequence row to alignment"),
+                ("ESC > Edit > Rename", "Rename selected sequence accession header"),
+            ]),
         ]
         
         # Format the help items

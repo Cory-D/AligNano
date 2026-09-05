@@ -12,12 +12,13 @@ A lightweight, dependency-free Python terminal interface for browsing and editin
 - **Dynamic Consensus and Conservation**: Real-time bottom-row ruler showing conservation levels (Bold Green for 100% identity, Bold White for >=80% conservation, lowercase for >=50%, and grey dots for polymorphic sites).
 - **Active Search and Live Highlights**: Search accession names or sequence motifs (`Ctrl+F`), instantly highlighting all matches across the viewport in high-contrast cyan.
 - **Synced Side-by-Side Panes**: Left-hand pane for accession names, right-hand pane for sequences. Scrolls in vertical synchronization.
-- **Intuitive Keyboard Controls**:
+- **Intuitive Keyboard Controls & ESC Menu**:
+  - **ESC Menu**: Invokes a clean, two-column side-by-side modal menu with direct access to File operations, Editing tools, Display color schemes, and Bioinformatics utilities.
   - **Arrow keys**: Cell-by-cell navigation and intuitive focus swapping between panes.
-  - **CTRL keys / Pages**: Page up, down, left, or right quickly. Supports Ctrl+Arrow keys and letter mappings.
-  - **Direct Editing**: Overwrite or insert characters, insert gaps, delete characters, edit accession headers, add new sequences, or delete rows.
+  - **Direct Editing**: Overwrite or insert residues, insert gaps, delete residues, edit accession headers, add new sequences, or reorder rows.
 - **Undo/Redo History**: Deep undo stack (up to 50 states) for sequences and accession edits.
 - **Multiple Alignment Formats**: Seamlessly load, edit, convert, and save alignments in FASTA, A3M, and Stockholm (`.sto` / `.stk`) formats. *(Note: When loading Stockholm files, sequence alignment data and identifiers are parsed while file/column/residue annotation metadata tags such as `#=GF`, `#=GS`, `#=GC`, and `#=GR` are stripped).*
+- **Overwrite Protection & Confirmation**: Prompts for confirmation `(y/N)` before saving over existing alignment files or exporting frequency CSV files to prevent accidental data loss. Defaults grid editing to **INSERT (INS)** mode to protect existing sequences from inadvertent residue overwriting.
 - **Sandbox Safe**: Only reads and writes inside the workspace directory (`AligNano`).
 - **Zero Dependencies**: Native cross-platform compatibility utilizing Unix `termios` and Windows `msvcrt`/`ctypes` VT.
 
@@ -42,35 +43,45 @@ python3 alignano.py input_examples/ubiquitin_dna.sto
 
 ---
 
-Every feature can be invoked using standard control (**Ctrl**) shortcuts, which is perfect for minimal keyboards lacking page, insert, or delete keys. Single-character shortcuts are also supported as fallbacks when navigating the Accession Names pane.
+## Navigation, ESC Menu & Reserved Shortcuts
 
-| Key(s) / Shortcut | Fallback / Alt Key | Action |
-|---|---|---|
-| `Arrows` | | Move cursor in active pane (Up/Down scrolls both synchronously) |
-| `Tab` or `Ctrl+I` | | Switch focus between the Accession Names pane and the Sequence pane |
-| `[` / `]` | | Decrease / increase Accession Name panel width |
-| `Ctrl+H` / `?` | `H` / `h` (Accession Pane only) | Open / close the interactive scrollable Help screen |
-| `Ctrl+L` / `Ctrl+R` | | Page sequences horizontally |
-| `Ctrl+U` / `Ctrl+D` | `Page Up` / `Page Down` | Page sequences/accessions vertically |
-| `Ctrl+T` | `T` (Accession Pane only) | Translate DNA alignment to Protein (prompts for reading frame and NCBI genetic code table) |
-| `Ctrl+B` | `M` (Accession Pane only) | Toggle dedicated **MOVE SEQUENCE (MOV)** mode (then use normal **Up/Down** arrows to shift it) |
-| `Ctrl+O` | `Insert` | Toggle edit mode between **INSERT (INS)** and **OVERWRITE (OVR)** |
-| `Alphanumeric` | | Insert or overwrite nucleotides or amino acids at cursor (in sequence pane) |
-| `Space` or `-` | | Insert alignment gap (`-`) at cursor |
-| `Ctrl+K` | `Delete` / `D` (Accession Pane only) | In Sequence Pane: delete base to the left of the cursor; In Accession Pane: delete current sequence row immediately (undoable) |
-| `Ctrl+E` | `E` (Accession Pane only) | Edit selected accession name |
-| `Ctrl+N` / `Ctrl+A` | `N` / `A` (Accession Pane only) | Add a new empty sequence row |
-| `Ctrl+X` | `X` (Accession Pane only) | Delete current sequence row (requires confirmation) |
-| `Ctrl+V` | `V` (Accession Pane only) | Cycle color visualization modes (**DNA/RNA** ➔ **Protein** ➔ **DIFF (variable sites)** ➔ **Monochrome**) |
-| `Ctrl+P` | `P` (Accession Pane only) | Toggle alignment file save format (**FASTA** ➔ **A3M** ➔ **STO** ➔ **FASTA**) |
-| `Ctrl+W` | `C` (Accession Pane only) | Sort/cluster sequences by Levenshtein distance relative to the top reference sequence |
-| `Ctrl+F` | | Open search prompt (find accession name or sequence motif) |
-| `Ctrl+J` | | Jump to the next search match |
-| `Ctrl+G` | `G` (Accession Pane only) | Export transposed character counts/frequencies (all and polymorphic-only) CSVs |
-| `Ctrl+Z` | `U` (Accession Pane only) | Undo last action |
-| `Ctrl+Y` | `Y` (Accession Pane only) | Redo last action |
-| `Ctrl+S` | `S` (Accession Pane only) | Save current alignment to a file (FASTA, A3M, or STO) |
-| `Ctrl+Q` | `Q` (Accession Pane only) | Quit editor (warns if there are unsaved changes) |
+AligNano uses an **`ESC`**-invoked menu to organize functions cleanly without keyboard clutter, reserving standard **Ctrl** keys only for core, high-frequency editor commands.
+
+### The ESC Main Menu
+
+Press **`ESC`** at any time to open the side-by-side modal menu:
+- Use **`Up / Down`** to navigate items.
+- Use **`Left / Right`** (or **`Enter`**) to switch between the **Categories** and **Actions** columns.
+- Use **`1, 2, 3, 4`** to jump directly to categories (*1. File*, *2. Edit*, *3. Display*, *4. Tools*).
+- Press **`ESC`** to return from Actions to Categories, or close the menu.
+
+| Menu Category | Available Actions |
+|---|---|
+| **1. File** | Save Alignment (`Ctrl+S`), Toggle Alignment Format (FASTA / A3M / STO), Export Frequencies (CSV), Help & Overview (`?`), Quit Editor (`Ctrl+Q`) |
+| **2. Edit** | Undo (`Ctrl+Z`), Redo (`Ctrl+Y`), Toggle Insert/Overwrite (`Insert`), Rename Accession Header, Add Sequence Row, Delete Sequence Row, Reorder/Move Row |
+| **3. Display** | Directly select Color Scheme (*DNA/RNA*, *Protein ClustalX*, *DIFF Variable Sites*, *Monochrome*), Widen Accession Pane (`]`), Narrow Accession Pane (`[`), Page Left, Page Right |
+| **4. Tools** | Search Motif or Header (`Ctrl+F`), Jump to Next Match (`Ctrl+J`), Translate DNA to Protein (6 reading frames, 26 NCBI code tables), Sort by Levenshtein distance |
+
+### Reserved Direct Shortcuts
+
+| Key / Shortcut | Action |
+|---|---|
+| **`ESC`** | Open / Close the AligNano Main Menu |
+| **`Arrows`** | Move cursor in active pane (Up/Down scrolls both synchronously; Left/Right crosses panes) |
+| **`Tab`** | Switch focus between Accession Names pane and Sequence Grid |
+| **`[` / `]`** | Narrow / widen Accession Name pane width |
+| **`Insert`** | Toggle edit mode between **INSERT (INS)** and **OVERWRITE (OVR)** |
+| **`Alphanumeric`** | Insert or overwrite residue at cursor (in sequence grid) |
+| **`Space` or `-`** | Insert or overwrite alignment gap (`-`) at cursor |
+| **`Backspace` / `Delete`** | In Sequence Grid: delete residue left of cursor; In Accession Pane: delete highlighted sequence row (undoable) |
+| **`Page Up` / `Page Down`** | Page sequences vertically by viewport height |
+| **`Ctrl+F`** | Open search prompt (find accession name or sequence motif) |
+| **`Ctrl+J`** | Jump to the next search match |
+| **`Ctrl+Z`** | Undo last action (up to 50 historical states) |
+| **`Ctrl+Y`** | Redo last undone action |
+| **`Ctrl+S`** | Quick-save alignment to file |
+| **`Ctrl+Q`** | Quit editor (warns if unsaved changes exist) |
+| **`?`** | Open / close the interactive scrollable Help screen |
 
 ---
 
