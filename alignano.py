@@ -724,7 +724,7 @@ def get_modal_menu_structure(current_vis_mode, alignment_format):
             "File",
             [
                 ("SAVE", "Save Alignment", "Ctrl+S"),
-                ("TOGGLE_FORMAT", f"Format: {alignment_format.upper()} (Toggle)", ""),
+                ("TOGGLE_FORMAT", f"Format: < {alignment_format.upper()} >", "◄/►"),
                 ("EXPORT_FREQ", "Export Frequencies (CSV)", ""),
                 ("HELP", "Help & Overview", "?"),
                 ("QUIT", "Quit Editor", "Ctrl+Q"),
@@ -1222,16 +1222,26 @@ def draw_screen(
     # 6. Status / Help / Prompt Line
     if prompt_mode:
         raw_prompt = f" * {prompt_text}{prompt_input}"
-        space_left = cols - 2 - len(raw_prompt) - 1  # 1 for cursor char
-        lines.append("|" + raw_prompt + "_" + " " * max(0, space_left) + "|")
+        max_prompt_len = max(5, cols - 4)
+        if len(raw_prompt) > max_prompt_len:
+            raw_prompt = raw_prompt[:max_prompt_len]
+        space_left = max(0, cols - 2 - len(raw_prompt) - 1)
+        lines.append("|" + raw_prompt + "_" + " " * space_left + "|")
     elif status_msg:
-        # Show flashing warning or successful saving notification
-        space_left = cols - 2 - len(status_msg)
-        lines.append("|" + status_msg + " " * max(0, space_left) + "|")
+        # Show flashing warning or notification (clamped to prevent terminal line wraps)
+        max_msg_len = max(5, cols - 4)
+        display_msg = status_msg
+        if len(display_msg) > max_msg_len:
+            display_msg = display_msg[: max_msg_len - 3] + "..."
+        space_left = max(0, cols - 2 - len(display_msg))
+        lines.append("|" + display_msg + " " * space_left + "|")
     else:
         help_text = " [ESC] Menu   [Tab] Switch Pane   [Arrows] Navigate   [Ins] Insert/Overwrite"
-        space_left = cols - 2 - len(help_text)
-        lines.append("|" + help_text + " " * max(0, space_left) + "|")
+        max_help_len = max(5, cols - 2)
+        if len(help_text) > max_help_len:
+            help_text = help_text[:max_help_len]
+        space_left = max(0, cols - 2 - len(help_text))
+        lines.append("|" + help_text + " " * space_left + "|")
 
     # 7. Navigation shortcut help line
     if move_mode:
@@ -1242,8 +1252,11 @@ def draw_screen(
         )
     else:
         nav_text = " [Enter] Confirm   [Escape] Cancel / Exit Prompt"
-    space_left = cols - 2 - len(nav_text)
-    lines.append("|" + nav_text + " " * max(0, space_left) + "|")
+    max_nav_len = max(5, cols - 2)
+    if len(nav_text) > max_nav_len:
+        nav_text = nav_text[:max_nav_len]
+    space_left = max(0, cols - 2 - len(nav_text))
+    lines.append("|" + nav_text + " " * space_left + "|")
 
     # 8. Footer bottom border (ASCII)
     lines.append("+" + "-" * (cols - 2) + "+")
@@ -1329,7 +1342,7 @@ def run_modal_menu(
             sys.stdout.flush()
             continue
         except (KeyboardInterrupt, Exception):
-            return None
+            return None, alignment_format
 
         # Key handling inside modal menu
         if key in ("\r", "\n", "ENTER", "FIND_NEXT"):
@@ -1337,13 +1350,19 @@ def run_modal_menu(
                 active_col = "act"
                 act_idx = 0
             else:
-                return current_actions[act_idx][0]
+                action_code = current_actions[act_idx][0]
+                if action_code == "TOGGLE_FORMAT":
+                    formats = ["fasta", "a3m", "sto"]
+                    curr_i = formats.index(alignment_format) if alignment_format in formats else 0
+                    alignment_format = formats[(curr_i + 1) % len(formats)]
+                    continue
+                return action_code, alignment_format
 
         elif key == "ESCAPE":
             if active_col == "act":
                 active_col = "cat"
             else:
-                return None  # Exit menu
+                return None, alignment_format  # Exit menu
 
         elif key == "KEY_UP":
             if active_col == "cat":
@@ -1363,11 +1382,24 @@ def run_modal_menu(
             if active_col == "cat":
                 active_col = "act"
                 act_idx = 0
-            elif key == "TAB":
-                active_col = "cat"
+            elif active_col == "act":
+                action_code = current_actions[act_idx][0]
+                if action_code == "TOGGLE_FORMAT":
+                    formats = ["fasta", "a3m", "sto"]
+                    curr_i = formats.index(alignment_format) if alignment_format in formats else 0
+                    alignment_format = formats[(curr_i + 1) % len(formats)]
+                    continue
+                elif key == "TAB":
+                    active_col = "cat"
 
         elif key == "KEY_LEFT":
             if active_col == "act":
+                action_code = current_actions[act_idx][0]
+                if action_code == "TOGGLE_FORMAT":
+                    formats = ["fasta", "a3m", "sto"]
+                    curr_i = formats.index(alignment_format) if alignment_format in formats else 0
+                    alignment_format = formats[(curr_i - 1) % len(formats)]
+                    continue
                 active_col = "cat"
 
         elif key in ("1", "2", "3", "4"):
@@ -1378,7 +1410,7 @@ def run_modal_menu(
                 act_idx = 0
 
         elif key == "QUIT" or key == "\x03":
-            return None
+            return None, alignment_format
 
 
 def save_alignment_file(dest_file, alignment_format, headers, sequences):
@@ -1764,7 +1796,7 @@ def run_editor(filepath):
                             val = "+" + val
                         pending_frame = val
                         prompt_mode = "translate_code"
-                        prompt_text = "Select Genetic Code (1:Standard 2:VertMito 3:YeastMito 4:MoldMito 5:InvertMito 6:Ciliate 9:Echinoderm 10:Euplotid 11:Bact) [1]: "
+                        prompt_text = "NCBI Code (1:Std 2:Vert 3:Yeast 5:Invert 11:Bact) [1]: "
                         prompt_input = ""
                 elif prompt_mode == "translate_code":
                     val = prompt_input.strip()
@@ -1780,10 +1812,13 @@ def run_editor(filepath):
                         history.push_state(headers, sequences)
                         sequences = translate_alignment(sequences, pending_frame, code_id)
                         vis_mode = "aa"
-                        cursor_col = max(0, cursor_col // 3)
+                        new_len = len(sequences[0]) if sequences else 0
+                        cursor_col = max(0, min(cursor_col // 3, max(0, new_len - 1)))
+                        col_offset = max(0, min(col_offset // 3, cursor_col))
                         modified = True
-                        code_name = GENETIC_CODE_NAMES.get(code_id, "Standard Code")
-                        status_msg = f"Translated to Protein (Frame {pending_frame}, Code {code_id}: {code_name}). Press Ctrl+Z to undo."
+                        status_msg = f"Translated to Protein (Frame {pending_frame}, Code {code_id}). Press Ctrl+Z to undo."
+                        sys.stdout.write("\x1b[2J")
+                        sys.stdout.flush()
                     else:
                         status_msg = "No sequences to translate."
                     status_expiry = time.time() + 4.0
@@ -1878,7 +1913,8 @@ def run_editor(filepath):
 
         # Main ESC Modal Menu Handler
         if key == "ESCAPE":
-            action = run_modal_menu(
+            old_fmt = alignment_format
+            action, alignment_format = run_modal_menu(
                 headers,
                 sequences,
                 cursor_row,
@@ -1893,6 +1929,10 @@ def run_editor(filepath):
                 acc_width,
                 alignment_format,
             )
+            if alignment_format != old_fmt:
+                status_msg = f"Alignment Format set to: {alignment_format.upper()}"
+                status_expiry = time.time() + 2.0
+
             if not action:
                 continue
 
@@ -1903,13 +1943,7 @@ def run_editor(filepath):
                 prompt_input = filename if filename else "alignment.fasta"
 
             elif action == "TOGGLE_FORMAT":
-                if alignment_format == "fasta":
-                    alignment_format = "a3m"
-                elif alignment_format == "a3m":
-                    alignment_format = "sto"
-                else:
-                    alignment_format = "fasta"
-                status_msg = f"Alignment Format toggled to: {alignment_format.upper()}"
+                status_msg = f"Alignment Format set to: {alignment_format.upper()}"
                 status_expiry = time.time() + 2.0
 
             elif action == "EXPORT_FREQ":
@@ -2040,7 +2074,7 @@ def run_editor(filepath):
 
             elif action == "TRANSLATE":
                 prompt_mode = "translate_frame"
-                prompt_text = "Select Reading Frame (+1, +2, +3, -1, -2, -3) [default: +1]: "
+                prompt_text = "Reading Frame (+1,+2,+3,-1,-2,-3) [default: +1]: "
                 prompt_input = ""
 
             elif action == "SORT_DIST":
