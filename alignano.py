@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # AligNano
 # Software Architect : Cory Dunn
+import atexit
 import copy
 import os
 import select
@@ -17,19 +18,39 @@ def supports_256_colors():
     """Detects if stdout supports 256 colors."""
     if not sys.stdout.isatty():
         return False
-    # Check COLORTERM first
+    # Check COLORTERM first (truecolor / 24bit)
     colorterm = os.environ.get("COLORTERM", "").lower()
-    if colorterm in ("truecolor", "24bit"):
+    if colorterm in ("truecolor", "24bit", "yes"):
         return True
     # Check TERM
     term = os.environ.get("TERM", "").lower()
-    if "256color" in term or "256" in term:
+    if any(k in term for k in ("256color", "256", "kitty", "alacritty", "foot", "iterm", "wezterm")):
+        return True
+    # Most modern xterm/screen/tmux terminals support 256 colors even if labeled xterm
+    if term in ("xterm", "screen", "tmux", "rxvt", "linux"):
         return True
     # Check Windows Terminal/VS Code environments
     if sys.platform == "win32":
         if "WT_SESSION" in os.environ or "VSCODE_GIT_IPC_HANDLE" in os.environ:
             return True
     return False
+
+
+def enable_mouse_tracking():
+    """Enables SGR 1006 extended mouse tracking (clicks, drags, and wheel) in the terminal."""
+    if sys.stdout.isatty():
+        sys.stdout.write("\x1b[?1000h\x1b[?1002h\x1b[?1006h")
+        sys.stdout.flush()
+
+
+def disable_mouse_tracking():
+    """Disables terminal mouse tracking, restoring native terminal copy/paste selection."""
+    if sys.stdout.isatty():
+        sys.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1006l")
+        sys.stdout.flush()
+
+
+atexit.register(disable_mouse_tracking)
 
 
 def get_theme_colors():
@@ -165,6 +186,7 @@ def read_key():
                 "win_e0_74": "CTRL_RIGHT",
                 "win_e0_8d": "CTRL_UP",
                 "win_e0_91": "CTRL_DOWN",
+                "win_00_3c": "F2",
             }
             return win_map.get(code, "UNKNOWN")
 
@@ -204,7 +226,7 @@ def read_key():
         }
         return common_map.get(k, k)
     else:
-        # Unix keyboard input
+        # Unix keyboard & mouse input
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         try:
@@ -213,7 +235,66 @@ def read_key():
             if ch == "\x1b":
                 rlist, _, _ = select.select([fd], [], [], 0.05)
                 if rlist:
-                    seq = ch + os.read(fd, 7).decode("utf-8", errors="ignore")
+                    chunk = os.read(fd, 32).decode("utf-8", errors="ignore")
+                    seq = ch + chunk
+
+                    # SGR mouse tracking sequence: \x1b[<btn;col;row;[M/m]
+                    if seq.startswith("\x1b[<"):
+                        while not (seq.endswith("M") or seq.endswith("m")) and len(seq) < 32:
+                            r2, _, _ = select.select([fd], [], [], 0.02)
+                            if not r2:
+                                break
+                            seq += os.read(fd, 8).decode("utf-8", errors="ignore")
+
+                        try:
+                            content = seq[3:-1]
+                            parts = content.split(";")
+                            if len(parts) == 3:
+                                btn = int(parts[0])
+                                col = int(parts[1])
+                                row = int(parts[2])
+                                is_release = seq.endswith("m")
+                                if is_release:
+                                    return ("MOUSE_RELEASE", btn, col, row)
+                                if btn == 64:
+                                    return ("MOUSE_WHEEL_UP", col, row)
+                                elif btn == 65:
+                                    return ("MOUSE_WHEEL_DOWN", col, row)
+                                elif btn == 66:
+                                    return ("MOUSE_WHEEL_LEFT", col, row)
+                                elif btn == 67:
+                                    return ("MOUSE_WHEEL_RIGHT", col, row)
+                                elif btn == 32:
+                                    return ("MOUSE_DRAG", col, row)
+                                elif btn == 0:
+                                    return ("MOUSE_PRESS", col, row)
+                                elif btn == 1:
+                                    return ("MOUSE_MIDDLE", col, row)
+                                elif btn == 2:
+                                    return ("MOUSE_RIGHT", col, row)
+                        except Exception:
+                            pass
+                        return "UNKNOWN"
+
+                    # Legacy X10 mouse tracking sequence: \x1b[M followed by 3 bytes
+                    if seq.startswith("\x1b[M") and len(seq) >= 6:
+                        try:
+                            btn_raw = ord(seq[3]) - 32
+                            col = ord(seq[4]) - 32
+                            row = ord(seq[5]) - 32
+                            if btn_raw == 64:
+                                return ("MOUSE_WHEEL_UP", col, row)
+                            elif btn_raw == 65:
+                                return ("MOUSE_WHEEL_DOWN", col, row)
+                            elif btn_raw == 32:
+                                return ("MOUSE_DRAG", col, row)
+                            elif btn_raw == 0:
+                                return ("MOUSE_PRESS", col, row)
+                            elif btn_raw == 3:
+                                return ("MOUSE_RELEASE", 0, col, row)
+                        except Exception:
+                            pass
+                        return "UNKNOWN"
 
                     unix_map = {
                         "\x1b[A": "KEY_UP",
@@ -232,6 +313,9 @@ def read_key():
                         "\x1bOB": "KEY_DOWN",
                         "\x1bOC": "KEY_RIGHT",
                         "\x1bOD": "KEY_LEFT",
+                        "\x1bOQ": "F2",
+                        "\x1b[12~": "F2",
+                        "\x1b[[B": "F2",
                     }
                     return unix_map.get(seq, "ESCAPE")
                 return "ESCAPE"
@@ -712,7 +796,7 @@ _diff_cache_state = None
 _diff_col_cache = {}
 
 
-def get_modal_menu_structure(current_vis_mode, alignment_format):
+def get_modal_menu_structure(current_vis_mode, alignment_format, mouse_enabled=False):
     """Returns categorized menu items and shortcuts for the modal menu."""
     radio_nuc = "(*)" if current_vis_mode == "nuc" else "( )"
     radio_aa = "(*)" if current_vis_mode == "aa" else "( )"
@@ -749,6 +833,7 @@ def get_modal_menu_structure(current_vis_mode, alignment_format):
                 ("COLOR_AA", f"{radio_aa} Protein (ClustalX)", ""),
                 ("COLOR_DIFF", f"{radio_diff} DIFF (Variable Sites)", ""),
                 ("COLOR_MONO", f"{radio_mono} Monochrome", ""),
+                ("TOGGLE_MOUSE", f"Mouse Mode: < {'ON' if mouse_enabled else 'OFF'} >", "F2"),
                 ("PANE_WIDEN", "Widen Accession Pane", "]"),
                 ("PANE_NARROW", "Narrow Accession Pane", "["),
                 ("PAGE_LEFT", "Page Sequences Left", ""),
@@ -807,8 +892,8 @@ def build_modal_menu_lines(modal_state):
     mid_sep = f"{blue}├{'─' * cat_w}┼{'─' * act_w}┤{reset}"
     lines.append(mid_sep)
 
-    # 4. Content rows (8 rows total to accommodate longest menu)
-    max_rows = 8
+    # 4. Content rows (dynamically sized to longest menu category)
+    max_rows = max(len(cat[1]) for cat in categories)
     actions = categories[cat_idx][1]
 
     for r in range(max_rows):
@@ -1236,7 +1321,7 @@ def draw_screen(
         space_left = max(0, cols - 2 - len(display_msg))
         lines.append("|" + display_msg + " " * space_left + "|")
     else:
-        help_text = " [ESC] Menu   [Tab] Switch Pane   [Arrows] Navigate   [Ins] Insert/Overwrite"
+        help_text = " [ESC] Menu   [F2] Mouse   [Tab] Pane   [Arrows] Move   [Ins] Ins/Ovr"
         max_help_len = max(5, cols - 2)
         if len(help_text) > max_help_len:
             help_text = help_text[:max_help_len]
@@ -1289,6 +1374,7 @@ def run_modal_menu(
     modified,
     acc_width,
     alignment_format,
+    mouse_enabled=False,
 ):
     """Interactive side-by-side modal dialog invoked by ESC."""
     active_col = "cat"  # 'cat' (Categories) or 'act' (Actions)
@@ -1296,7 +1382,7 @@ def run_modal_menu(
     act_idx = 0
 
     while True:
-        categories = get_modal_menu_structure(vis_mode, alignment_format)
+        categories = get_modal_menu_structure(vis_mode, alignment_format, mouse_enabled)
         if cat_idx < 0:
             cat_idx = 0
         if cat_idx >= len(categories):
@@ -1342,7 +1428,69 @@ def run_modal_menu(
             sys.stdout.flush()
             continue
         except (KeyboardInterrupt, Exception):
-            return None, alignment_format
+            return None, alignment_format, mouse_enabled
+
+        # Mouse event handling inside modal menu
+        if isinstance(key, tuple) and key[0].startswith("MOUSE"):
+            m_event = key[0]
+            if m_event == "MOUSE_PRESS":
+                _, m_col, m_row = key
+                cols, rows = get_terminal_size()
+                modal_lines = build_modal_menu_lines(modal_state)
+                start_row = max(1, (rows - len(modal_lines)) // 2)
+                start_col = max(1, (cols - 70) // 2)
+                inner_w = 68
+                cat_w = 20
+                act_w = 47
+
+                # Click outside modal menu -> close menu
+                if m_row <= start_row or m_row > start_row + len(modal_lines) or m_col <= start_col or m_col > start_col + inner_w + 2:
+                    return None, alignment_format, mouse_enabled
+
+                # Content rows start at start_row + 4
+                content_start_row = start_row + 4
+                max_r = max(len(cat[1]) for cat in categories)
+                if content_start_row <= m_row < content_start_row + max_r:
+                    r_idx = m_row - content_start_row
+                    # Categories column: start_col + 2 to start_col + 1 + cat_w
+                    if start_col + 2 <= m_col <= start_col + 1 + cat_w:
+                        if 0 <= r_idx < len(categories):
+                            cat_idx = r_idx
+                            active_col = "act"
+                            act_idx = 0
+                            continue
+                    # Actions column: start_col + 2 + cat_w + 1 to start_col + 2 + cat_w + act_w
+                    elif start_col + 2 + cat_w + 1 <= m_col <= start_col + 2 + cat_w + act_w:
+                        if 0 <= r_idx < len(current_actions):
+                            act_idx = r_idx
+                            action_code = current_actions[act_idx][0]
+                            if action_code == "TOGGLE_FORMAT":
+                                formats = ["fasta", "a3m", "sto"]
+                                curr_i = formats.index(alignment_format) if alignment_format in formats else 0
+                                alignment_format = formats[(curr_i + 1) % len(formats)]
+                                continue
+                            elif action_code == "TOGGLE_MOUSE":
+                                mouse_enabled = not mouse_enabled
+                                if mouse_enabled:
+                                    enable_mouse_tracking()
+                                else:
+                                    disable_mouse_tracking()
+                                continue
+                            return action_code, alignment_format, mouse_enabled
+
+            elif m_event == "MOUSE_WHEEL_UP":
+                if active_col == "cat":
+                    cat_idx = (cat_idx - 1) % len(categories)
+                else:
+                    act_idx = (act_idx - 1) % len(current_actions)
+                continue
+            elif m_event == "MOUSE_WHEEL_DOWN":
+                if active_col == "cat":
+                    cat_idx = (cat_idx + 1) % len(categories)
+                else:
+                    act_idx = (act_idx + 1) % len(current_actions)
+                continue
+            continue
 
         # Key handling inside modal menu
         if key in ("\r", "\n", "ENTER", "FIND_NEXT"):
@@ -1356,13 +1504,28 @@ def run_modal_menu(
                     curr_i = formats.index(alignment_format) if alignment_format in formats else 0
                     alignment_format = formats[(curr_i + 1) % len(formats)]
                     continue
-                return action_code, alignment_format
+                elif action_code == "TOGGLE_MOUSE":
+                    mouse_enabled = not mouse_enabled
+                    if mouse_enabled:
+                        enable_mouse_tracking()
+                    else:
+                        disable_mouse_tracking()
+                    continue
+                return action_code, alignment_format, mouse_enabled
 
         elif key == "ESCAPE":
             if active_col == "act":
                 active_col = "cat"
             else:
-                return None, alignment_format  # Exit menu
+                return None, alignment_format, mouse_enabled  # Exit menu
+
+        elif key == "F2":
+            mouse_enabled = not mouse_enabled
+            if mouse_enabled:
+                enable_mouse_tracking()
+            else:
+                disable_mouse_tracking()
+            continue
 
         elif key == "KEY_UP":
             if active_col == "cat":
@@ -1389,6 +1552,13 @@ def run_modal_menu(
                     curr_i = formats.index(alignment_format) if alignment_format in formats else 0
                     alignment_format = formats[(curr_i + 1) % len(formats)]
                     continue
+                elif action_code == "TOGGLE_MOUSE":
+                    mouse_enabled = not mouse_enabled
+                    if mouse_enabled:
+                        enable_mouse_tracking()
+                    else:
+                        disable_mouse_tracking()
+                    continue
                 elif key == "TAB":
                     active_col = "cat"
 
@@ -1400,6 +1570,13 @@ def run_modal_menu(
                     curr_i = formats.index(alignment_format) if alignment_format in formats else 0
                     alignment_format = formats[(curr_i - 1) % len(formats)]
                     continue
+                elif action_code == "TOGGLE_MOUSE":
+                    mouse_enabled = not mouse_enabled
+                    if mouse_enabled:
+                        enable_mouse_tracking()
+                    else:
+                        disable_mouse_tracking()
+                    continue
                 active_col = "cat"
 
         elif key in ("1", "2", "3", "4"):
@@ -1410,7 +1587,7 @@ def run_modal_menu(
                 act_idx = 0
 
         elif key == "QUIT" or key == "\x03":
-            return None, alignment_format
+            return None, alignment_format, mouse_enabled
 
 
 def save_alignment_file(dest_file, alignment_format, headers, sequences):
@@ -1505,7 +1682,7 @@ def export_frequency_tables(prefix, sequences, current_dir):
 # ==============================================================================
 # MAIN EDITOR SESSION
 # ==============================================================================
-def run_editor(filepath):
+def run_editor(filepath, mouse_enabled=True):
     """Main keyboard polling and state update loop for the alignment editor."""
     headers, sequences, alignment_format = load_alignment(filepath)
     filename = filepath
@@ -1523,19 +1700,22 @@ def run_editor(filepath):
 
     active_pane = "seq"  # 'acc' or 'seq'
     insert_mode = True  # True = Insert, False = Overwrite (default to Insert for safety)
-    if not supports_256_colors():
-        vis_mode = "mono"
-    else:
-        vis_mode = detect_vis_mode(sequences)
+    vis_mode = detect_vis_mode(sequences)
     modified = False
     acc_width_delta = 0
     move_mode = False
+
+    mouse_dragging_divider = False
+    mouse_dragging_grid = False
 
     history = StateHistory()
 
     # Clear screen and hide cursor on start
     sys.stdout.write("\x1b[2J\x1b[?25l")
     sys.stdout.flush()
+
+    if mouse_enabled:
+        enable_mouse_tracking()
 
     status_msg = ""
     status_expiry = 0.0
@@ -1911,10 +2091,97 @@ def run_editor(filepath):
                 prompt_input += key
             continue
 
+        # F2 key directly toggles mouse mode
+        if key == "F2":
+            mouse_enabled = not mouse_enabled
+            if mouse_enabled:
+                enable_mouse_tracking()
+                status_msg = "Mouse Mode ENABLED (Click cursor, drag partition, wheel scroll. Shift+Drag to copy text)"
+            else:
+                disable_mouse_tracking()
+                status_msg = "Mouse Mode DISABLED (Native terminal text selection restored)"
+            status_expiry = time.time() + 3.0
+            continue
+
+        # Mouse Event Handler
+        if isinstance(key, tuple) and key[0].startswith("MOUSE"):
+            m_event = key[0]
+            if m_event == "MOUSE_PRESS":
+                _, m_col, m_row = key
+                # 1. Divider drag grab: within 1 column of divider (divider is at acc_width + 2)
+                if abs(m_col - (acc_width + 2)) <= 1 and 3 <= m_row <= (rows - 3):
+                    mouse_dragging_divider = True
+                    status_msg = "Dragging panel divider (move mouse left/right, release to finish)"
+                    status_expiry = time.time() + 1.5
+                    continue
+                # 2. Viewport click (row 6 to 5 + view_height)
+                elif 6 <= m_row < 6 + view_height:
+                    target_row = row_offset + (m_row - 6)
+                    if 0 <= target_row < num_seqs:
+                        cursor_row = target_row
+                        if 2 <= m_col <= acc_width + 1:
+                            active_pane = "acc"
+                        elif m_col >= acc_width + 3 and m_col < cols:
+                            active_pane = "seq"
+                            target_col = col_offset + (m_col - (acc_width + 3))
+                            cursor_col = max(0, min(seq_len - 1, target_col))
+                            mouse_dragging_grid = True
+                    continue
+                # 3. Bottom bar click
+                elif m_row >= rows - 3:
+                    if m_col <= 15:
+                        key = "ESCAPE"
+                    elif 16 <= m_col <= 35:
+                        active_pane = "acc" if active_pane == "seq" else "seq"
+                        continue
+                    elif 36 <= m_col <= 55:
+                        insert_mode = not insert_mode
+                        status_msg = f"Edit Mode: {'INSERT' if insert_mode else 'OVERWRITE'}"
+                        status_expiry = time.time() + 2.0
+                        continue
+
+            elif m_event == "MOUSE_DRAG":
+                _, m_col, m_row = key
+                if mouse_dragging_divider:
+                    target_width = max(5, min(cols - 10, m_col - 2))
+                    acc_width_delta = target_width - int(cols * 0.22)
+                    continue
+                elif mouse_dragging_grid:
+                    if 6 <= m_row < 6 + view_height:
+                        target_row = row_offset + (m_row - 6)
+                        if 0 <= target_row < num_seqs:
+                            cursor_row = target_row
+                    if m_col >= acc_width + 3 and m_col < cols:
+                        target_col = col_offset + (m_col - (acc_width + 3))
+                        cursor_col = max(0, min(seq_len - 1, target_col))
+                    continue
+
+            elif m_event == "MOUSE_RELEASE":
+                mouse_dragging_divider = False
+                mouse_dragging_grid = False
+                continue
+
+            elif m_event == "MOUSE_WHEEL_UP":
+                cursor_row = max(0, cursor_row - 3)
+                continue
+
+            elif m_event == "MOUSE_WHEEL_DOWN":
+                cursor_row = min(num_seqs - 1, cursor_row + 3)
+                continue
+
+            elif m_event == "MOUSE_WHEEL_LEFT":
+                cursor_col = max(0, cursor_col - 5)
+                continue
+
+            elif m_event == "MOUSE_WHEEL_RIGHT":
+                cursor_col = min(seq_len - 1, cursor_col + 5)
+                continue
+
         # Main ESC Modal Menu Handler
         if key == "ESCAPE":
             old_fmt = alignment_format
-            action, alignment_format = run_modal_menu(
+            old_mouse = mouse_enabled
+            action, alignment_format, mouse_enabled = run_modal_menu(
                 headers,
                 sequences,
                 cursor_row,
@@ -1928,9 +2195,13 @@ def run_editor(filepath):
                 modified,
                 acc_width,
                 alignment_format,
+                mouse_enabled,
             )
             if alignment_format != old_fmt:
                 status_msg = f"Alignment Format set to: {alignment_format.upper()}"
+                status_expiry = time.time() + 2.0
+            elif mouse_enabled != old_mouse:
+                status_msg = f"Mouse Mode set to: {'ENABLED' if mouse_enabled else 'DISABLED'}"
                 status_expiry = time.time() + 2.0
 
             if not action:
@@ -2038,6 +2309,16 @@ def run_editor(filepath):
                 vis_mode = "mono"
                 status_msg = "Visual Mode: MONOCHROME"
                 status_expiry = time.time() + 2.0
+
+            elif action == "TOGGLE_MOUSE":
+                mouse_enabled = not mouse_enabled
+                if mouse_enabled:
+                    enable_mouse_tracking()
+                    status_msg = "Mouse Mode ENABLED (Click cursor, drag partition, wheel scroll. Shift+Drag to copy text)"
+                else:
+                    disable_mouse_tracking()
+                    status_msg = "Mouse Mode DISABLED (Native terminal text selection restored)"
+                status_expiry = time.time() + 3.0
 
             elif action == "PANE_WIDEN":
                 acc_width_delta += 2
@@ -2280,6 +2561,7 @@ def run_editor(filepath):
                 cursor_col += 1
                 modified = True
 
+    disable_mouse_tracking()
     # Restore terminal visibility and reset cursor on quit
     sys.stdout.write("\x1b[?25h\x1b[2J\x1b[H")
     sys.stdout.flush()
@@ -2646,9 +2928,19 @@ def run_file_selector():
 
 
 def main():
-    if len(sys.argv) > 1:
-        filepath = sys.argv[1]
-        run_editor(filepath)
+    args = sys.argv[1:]
+    mouse_arg = True
+    filepath = None
+    for arg in args:
+        if arg in ("--no-mouse", "--nomouse", "-M"):
+            mouse_arg = False
+        elif arg in ("--mouse", "-m"):
+            mouse_arg = True
+        elif not filepath and not arg.startswith("-"):
+            filepath = arg
+
+    if filepath:
+        run_editor(filepath, mouse_enabled=mouse_arg)
         return
 
     choices = ["Load Alignment (FASTA, A3M, or STO)", "Create New Empty Alignment", "Exit"]
@@ -2705,16 +2997,17 @@ def main():
                         save_stockholm(new_filename, ["Seq_1"], ["ACTG-ACTG-ACTG-ACTG"])
                     else:
                         save_fasta(new_filename, ["Seq_1"], ["ACTG-ACTG-ACTG-ACTG"])
-                    run_editor(new_filename)
+                    run_editor(new_filename, mouse_enabled=mouse_arg)
                     break
                 elif choice == "Load Alignment (FASTA, A3M, or STO)":
                     selected_file = run_file_selector()
                     if selected_file:
-                        run_editor(selected_file)
+                        run_editor(selected_file, mouse_enabled=mouse_arg)
                         break
             elif key == "Q" or key == "ESCAPE":
                 break
     finally:
+        disable_mouse_tracking()
         # Show cursor and reset screen on exit
         sys.stdout.write("\x1b[?25h\x1b[H\x1b[2J")
         sys.stdout.flush()
