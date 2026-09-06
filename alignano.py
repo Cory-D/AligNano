@@ -240,6 +240,22 @@ def read_key():
         old_settings = termios.tcgetattr(fd)
         try:
             tty.setraw(fd)
+            while True:
+                if _terminal_resized:
+                    _terminal_resized = False
+                    return "TERMINAL_RESIZE"
+                try:
+                    rlist, _, _ = select.select([fd], [], [], 0.05)
+                except (InterruptedError, OSError):
+                    if _terminal_resized:
+                        _terminal_resized = False
+                    return "TERMINAL_RESIZE"
+                if _terminal_resized:
+                    _terminal_resized = False
+                    return "TERMINAL_RESIZE"
+                if rlist:
+                    break
+
             try:
                 ch = os.read(fd, 1).decode("utf-8", errors="ignore")
             except (InterruptedError, OSError):
@@ -990,6 +1006,61 @@ def build_modal_menu_lines(modal_state):
     return lines
 
 
+MIN_TERMINAL_COLS = 80
+MIN_TERMINAL_ROWS = 20
+
+
+def render_terminal_too_small(cols, rows, min_cols=MIN_TERMINAL_COLS, min_rows=MIN_TERMINAL_ROWS):
+    """Renders a clean, centered overlay (inspired by btop) when the terminal is too small."""
+    colors = get_theme_colors()
+    bold = colors.get("bold", "\x1b[1m")
+    reset = colors.get("reset", "\x1b[0m")
+    dim = colors.get("dim", "\x1b[2m")
+    red = "\x1b[91m"
+    green = "\x1b[92m"
+
+    w_color = red if cols < min_cols else green
+    h_color = red if rows < min_rows else green
+
+    line1 = "Terminal size too small:"
+    line2 = f" Width = {w_color}{cols}{reset}{bold}  Height = {h_color}{rows}{reset}"
+    line2_len = len(f" Width = {cols}  Height = {rows}")
+    line3 = ""
+    line4 = "Needed for current config:"
+    line5 = f" Width = {min_cols}  Height = {min_rows}"
+    line6 = ""
+    line7 = f"{dim}[Press Q or ESC to quit]{reset}"
+    line7_len = len("[Press Q or ESC to quit]")
+
+    msg_items = [
+        (f"{bold}{line1}{reset}", len(line1)),
+        (f"{bold}{line2}{reset}", line2_len),
+        ("", 0),
+        (f"{bold}{line4}{reset}", len(line4)),
+        (f"{dim}{line5}{reset}", len(line5)),
+        ("", 0),
+        (line7, line7_len),
+    ]
+
+    total_lines = len(msg_items)
+    start_row = max(1, (rows - total_lines) // 2)
+
+    buf = ["\x1b[H\x1b[2J\x1b[?25l"]
+
+    for idx, (content, plain_len) in enumerate(msg_items):
+        r = start_row + idx
+        if r > rows:
+            break
+        if not content:
+            continue
+        c = max(1, (cols - plain_len) // 2)
+        buf.append(f"\x1b[{r};{c}H{content}")
+
+    buf.append(f"\x1b[{rows};1H")
+    sys.stdout.write("".join(buf))
+    sys.stdout.flush()
+
+
 def draw_screen(
     headers,
     sequences,
@@ -1018,6 +1089,10 @@ def draw_screen(
     global _diff_cache_state, _diff_col_cache
 
     cols, rows = shutil.get_terminal_size((80, 24))
+    if cols < MIN_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS:
+        render_terminal_too_small(cols, rows)
+        return
+
     num_seqs = len(sequences)
     seq_len = len(sequences[0]) if num_seqs > 0 else 0
 
@@ -1080,11 +1155,6 @@ def draw_screen(
             _diff_col_cache[col_idx] = is_identical
             if not is_identical:
                 non_identical_cols.add(col_idx)
-
-    if view_height < 1 or seq_width < 1:
-        sys.stdout.write("\x1b[H\x1b[2JTerminal too small! Please resize.\n")
-        sys.stdout.flush()
-        return
 
     has_256 = supports_256_colors()
     colors_theme = get_theme_colors()
@@ -1428,6 +1498,19 @@ def run_modal_menu(
     act_idx = 0
 
     while True:
+        cols, rows = shutil.get_terminal_size((80, 24))
+        if cols < MIN_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS:
+            render_terminal_too_small(cols, rows)
+            try:
+                key = read_key()
+            except (TerminalResizeException, InterruptedError, OSError):
+                key = "TERMINAL_RESIZE"
+            except (KeyboardInterrupt, Exception):
+                return None, alignment_format, mouse_enabled
+            if key in ("QUIT", "q", "Q", "ESCAPE", "\x03"):
+                return None, alignment_format, mouse_enabled
+            continue
+
         categories = get_modal_menu_structure(vis_mode, alignment_format, mouse_enabled)
         if cat_idx < 0:
             cat_idx = 0
@@ -1780,6 +1863,16 @@ def run_editor(filepath, mouse_enabled=True):
     while True:
         # Update dynamic dimensions
         cols, rows = shutil.get_terminal_size((80, 24))
+        if cols < MIN_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS:
+            render_terminal_too_small(cols, rows)
+            try:
+                key = read_key()
+            except (TerminalResizeException, InterruptedError, OSError):
+                key = "TERMINAL_RESIZE"
+            if key in ("QUIT", "q", "Q", "ESCAPE", "\x03"):
+                break
+            continue
+
         acc_width = min(50, max(5, int(cols * 0.22) + acc_width_delta))
         seq_width = cols - acc_width - 4
         view_height = rows - 9
@@ -2672,17 +2765,18 @@ def display_help_screen():
     scroll_offset = 0
     while True:
         cols, rows = shutil.get_terminal_size((80, 24))
-        if rows < 10 or cols < 40:
-            sys.stdout.write("\x1b[H\x1b[2JTerminal too small! Please resize.\n")
-            sys.stdout.flush()
+        if cols < MIN_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS:
+            render_terminal_too_small(cols, rows)
             try:
                 key = read_key()
-                if key == "TERMINAL_RESIZE":
-                    continue
-                if key in ("ESCAPE", "ENTER", "QUIT", "HELP", "Ctrl+H", "?") or (key in ("h", "H")):
-                    break
+            except (TerminalResizeException, InterruptedError, OSError):
+                key = "TERMINAL_RESIZE"
             except Exception:
+                break
+            if key == "TERMINAL_RESIZE":
                 continue
+            if key in ("ESCAPE", "ENTER", "QUIT", "q", "Q", "HELP", "Ctrl+H", "?", "h", "H", "\x03"):
+                break
             continue
         colors = get_theme_colors()
         
@@ -2833,6 +2927,9 @@ def display_help_screen():
 def display_retro_intro(choices, selected_idx):
     """Draws professional ANSI start screen menu."""
     cols, rows = shutil.get_terminal_size((80, 24))
+    if cols < MIN_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS:
+        render_terminal_too_small(cols, rows)
+        return
     lines = []
 
     # Modern Block-style ASCII art for "AligNano"
@@ -2888,9 +2985,8 @@ def display_retro_intro(choices, selected_idx):
 def display_file_selector(files, selected_idx, scroll_offset, view_height):
     """Draws file selection screen with scrollable viewport."""
     cols, rows = shutil.get_terminal_size((80, 24))
-    if rows < 18 or cols < 40:
-        sys.stdout.write("\x1b[H\x1b[2JTerminal too small! Please resize.\n")
-        sys.stdout.flush()
+    if cols < MIN_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS:
+        render_terminal_too_small(cols, rows)
         return
     lines = []
 
@@ -2994,6 +3090,16 @@ def run_file_selector():
 
     while True:
         cols, rows = shutil.get_terminal_size((80, 24))
+        if cols < MIN_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS:
+            render_terminal_too_small(cols, rows)
+            try:
+                key = read_key()
+            except (TerminalResizeException, InterruptedError, OSError):
+                key = "TERMINAL_RESIZE"
+            if key in ("QUIT", "q", "Q", "ESCAPE", "\x03"):
+                return None
+            continue
+
         # 18 lines of overhead (banner, scroll indicators, margins)
         view_height = max(3, rows - 18)
         
@@ -3061,6 +3167,17 @@ def main():
 
     try:
         while True:
+            cols, rows = shutil.get_terminal_size((80, 24))
+            if cols < MIN_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS:
+                render_terminal_too_small(cols, rows)
+                try:
+                    key = read_key()
+                except (TerminalResizeException, InterruptedError, OSError):
+                    key = "TERMINAL_RESIZE"
+                if key in ("QUIT", "q", "Q", "ESCAPE", "\x03"):
+                    break
+                continue
+
             display_retro_intro(choices, selected_idx)
             try:
                 key = read_key()
