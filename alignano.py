@@ -81,6 +81,8 @@ def get_theme_colors():
 # ==============================================================================
 # TERMINAL ESCAPE CODES & WINDOWS COMPATIBILITY
 # ==============================================================================
+_terminal_resized = False
+
 if sys.platform == "win32":
     import msvcrt
     import ctypes
@@ -107,8 +109,11 @@ else:
     import tty
     import signal
 
+    _terminal_resized = False
+
     def resize_handler(signum, frame):
-        raise TerminalResizeException()
+        global _terminal_resized
+        _terminal_resized = True
 
     signal.signal(signal.SIGWINCH, resize_handler)
 
@@ -167,6 +172,11 @@ DEFAULT_AA = "\x1b[48;5;250m\x1b[38;5;16m"
 # ==============================================================================
 def read_key():
     """Cross-platform keyboard reader returning clean logical strings."""
+    global _terminal_resized
+    if _terminal_resized:
+        _terminal_resized = False
+        return "TERMINAL_RESIZE"
+
     if sys.platform == "win32":
         # Windows keyboard input
         ch = msvcrt.getch()
@@ -230,20 +240,51 @@ def read_key():
         old_settings = termios.tcgetattr(fd)
         try:
             tty.setraw(fd)
-            ch = os.read(fd, 1).decode("utf-8", errors="ignore")
+            try:
+                ch = os.read(fd, 1).decode("utf-8", errors="ignore")
+            except (InterruptedError, OSError):
+                if _terminal_resized:
+                    _terminal_resized = False
+                return "TERMINAL_RESIZE"
+
+            if _terminal_resized:
+                _terminal_resized = False
+                return "TERMINAL_RESIZE"
+
+            if not ch:
+                return "UNKNOWN"
+
             if ch == "\x1b":
-                rlist, _, _ = select.select([fd], [], [], 0.05)
+                try:
+                    rlist, _, _ = select.select([fd], [], [], 0.05)
+                except (InterruptedError, OSError):
+                    if _terminal_resized:
+                        _terminal_resized = False
+                    return "TERMINAL_RESIZE"
+
                 if rlist:
-                    chunk = os.read(fd, 32).decode("utf-8", errors="ignore")
+                    try:
+                        chunk = os.read(fd, 32).decode("utf-8", errors="ignore")
+                    except (InterruptedError, OSError):
+                        if _terminal_resized:
+                            _terminal_resized = False
+                        return "TERMINAL_RESIZE"
+
                     seq = ch + chunk
 
                     # SGR mouse tracking sequence: \x1b[<btn;col;row;[M/m]
                     if seq.startswith("\x1b[<"):
                         while not (seq.endswith("M") or seq.endswith("m")) and len(seq) < 32:
-                            r2, _, _ = select.select([fd], [], [], 0.02)
+                            try:
+                                r2, _, _ = select.select([fd], [], [], 0.02)
+                            except (InterruptedError, OSError):
+                                break
                             if not r2:
                                 break
-                            seq += os.read(fd, 8).decode("utf-8", errors="ignore")
+                            try:
+                                seq += os.read(fd, 8).decode("utf-8", errors="ignore")
+                            except (InterruptedError, OSError):
+                                break
 
                         try:
                             content = seq[3:-1]
@@ -346,7 +387,16 @@ def read_key():
             }
             return common_map.get(ch, ch)
         finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            for _ in range(3):
+                try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    break
+                except Exception:
+                    try:
+                        termios.tcsetattr(fd, termios.TCSANOW, old_settings)
+                        break
+                    except Exception:
+                        pass
 
 
 # ==============================================================================
@@ -1419,12 +1469,15 @@ def run_modal_menu(
 
         try:
             key = read_key()
-        except TerminalResizeException:
+        except (TerminalResizeException, InterruptedError, OSError):
+            key = "TERMINAL_RESIZE"
+        except (KeyboardInterrupt, Exception):
+            return None, alignment_format, mouse_enabled
+
+        if key == "TERMINAL_RESIZE":
             sys.stdout.write("\x1b[2J")
             sys.stdout.flush()
             continue
-        except (KeyboardInterrupt, Exception):
-            return None, alignment_format, mouse_enabled
 
         # Mouse event handling inside modal menu
         if isinstance(key, tuple) and key[0].startswith("MOUSE"):
@@ -1787,7 +1840,10 @@ def run_editor(filepath, mouse_enabled=True):
         # Read user keystroke
         try:
             key = read_key()
-        except TerminalResizeException:
+        except (TerminalResizeException, InterruptedError, OSError):
+            key = "TERMINAL_RESIZE"
+
+        if key == "TERMINAL_RESIZE":
             # Clear screen and force redraw on next iteration
             sys.stdout.write("\x1b[2J")
             sys.stdout.flush()
@@ -2621,10 +2677,12 @@ def display_help_screen():
             sys.stdout.flush()
             try:
                 key = read_key()
+                if key == "TERMINAL_RESIZE":
+                    continue
                 if key in ("ESCAPE", "ENTER", "QUIT", "HELP", "Ctrl+H", "?") or (key in ("h", "H")):
                     break
             except Exception:
-                break
+                continue
             continue
         colors = get_theme_colors()
         
@@ -2749,8 +2807,12 @@ def display_help_screen():
         # Wait for key
         try:
             key = read_key()
-        except TerminalResizeException:
-            # Re-loop to handle resize
+        except (TerminalResizeException, InterruptedError, OSError):
+            key = "TERMINAL_RESIZE"
+
+        if key == "TERMINAL_RESIZE":
+            sys.stdout.write("\x1b[2J")
+            sys.stdout.flush()
             continue
             
         if key in ("ESCAPE", "ENTER", "QUIT", "HELP", "Ctrl+H", "?") or (key in ("h", "H")):
@@ -2950,7 +3012,10 @@ def run_file_selector():
         display_file_selector(files, selected_idx, scroll_offset, view_height)
         try:
             key = read_key()
-        except TerminalResizeException:
+        except (TerminalResizeException, InterruptedError, OSError):
+            key = "TERMINAL_RESIZE"
+
+        if key == "TERMINAL_RESIZE":
             sys.stdout.write("\x1b[2J")
             sys.stdout.flush()
             continue
@@ -2999,7 +3064,10 @@ def main():
             display_retro_intro(choices, selected_idx)
             try:
                 key = read_key()
-            except TerminalResizeException:
+            except (TerminalResizeException, InterruptedError, OSError):
+                key = "TERMINAL_RESIZE"
+
+            if key == "TERMINAL_RESIZE":
                 sys.stdout.write("\x1b[2J")
                 sys.stdout.flush()
                 continue
